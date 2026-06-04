@@ -1,0 +1,350 @@
+
+raw
+30p commented · HTML
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  WRC — World Repair Championship                                 ║
+  ║  전 세계 수리기사(기술자)와 소비자를 연결하는 글로벌 플랫폼         ║
+  ║  단일 HTML 파일에 React + Leaflet 지도를 모두 포함한 SPA          ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WRC — World Repair Championship</title>
+  
+  <!-- Google Fonts: Inter 폰트 (300~700 weight) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <!-- Leaflet CSS: 인터랙티브 지도 스타일시트 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+ 
+  <!-- React 18 UMD 빌드: CDN에서 직접 로드 (빌드 툴 없이 브라우저에서 바로 실행) -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <!-- Babel Standalone: JSX를 브라우저에서 실시간 트랜스파일 -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Leaflet JS: OpenStreetMap 기반 인터랙티브 지도 라이브러리 -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+ 
+  <style>
+    /* 전체 페이지 기본 스타일: 여백 제거, 전체 높이 사용, 배경색/폰트 설정, 스크롤 숨김 */
+    html, body, #root {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background-color: #f8f7f5; font-family: 'Inter', sans-serif; overflow: hidden;
+    }
+    /* Leaflet 지도 컨테이너에도 동일한 폰트 강제 적용 */
+    .leaflet-container { font-family: 'Inter', sans-serif !important; }
+    /* 스크롤바 완전 숨김 (크로스브라우저 대응) */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    /* UI 디자인 원칙: 모든 요소의 모서리를 직각으로 고정 (둥근 모서리 금지) */
+    /* STRICT REQUIREMENT: Sharp Rectangular UI Everywhere */
+    input, button, select, textarea, div { border-radius: 0 !important; }
+ 
+    /* 인트로 오버레이 등장 애니메이션: 아래에서 위로 페이드인 */
+    @keyframes fadeIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    .intro-animate { animation: fadeIn 0.6s ease forwards; }
+ 
+    /* 설정 드롭다운 메뉴: 헤더 우상단 고정, 흰 배경에 그림자 */
+    .settings-dropdown { position:absolute; right:0; top:calc(100% + 8px); background:#fff; border:2px solid #1a1a1a; min-width:200px; z-index:99999; box-shadow:0 4px 24px rgba(0,0,0,0.12); }
+    /* 설정 메뉴 각 항목: 패딩, 하단 구분선, 호버 효과 */
+    .settings-item { padding:12px 16px; cursor:pointer; font-size:13px; font-weight:600; border-bottom:1px solid #e5e3df; display:flex; align-items:center; gap:8px; }
+    .settings-item:hover { background:#f0f0f0; }
+    .settings-item:last-child { border-bottom:none; }
+  </style>
+</head>
+<body>
+ 
+  <div id="root"></div>
+ 
+  <script type="text/babel">
+    // React 핵심 훅 구조분해: 상태관리(useState), 사이드이펙트(useEffect), DOM참조(useRef), 메모이제이션(useCallback)
+    const { useState, useEffect, useRef, useCallback } = React;
+ 
+    /* ═══════════════════ DESIGN SYSTEM ════════════════ */
+    // 전체 앱에서 공통으로 사용하는 색상 팔레트 (디자인 토큰)
+    const C = {
+      bg: "#f8f7f5",       // 페이지 배경색 (따뜻한 오프화이트)
+      white: "#ffffff",
+      surface: "#fafaf9",  // 카드/패널 배경색 (배경보다 약간 밝음)
+      border: "#e5e3df",   // 기본 테두리색
+      borderDark: "#ccc9c3", // 강조 테두리색
+      text: "#1a1a1a",     // 기본 텍스트 (거의 검정)
+      textMid: "#444",     // 중간 강도 텍스트
+      textMuted: "#888",   // 보조/비활성 텍스트
+      accent: "#1a1a1a",   // 강조색 (text와 동일 — 모노크롬 디자인)
+      accentLight: "#f0f0f0", // 선택된 버튼 배경 등 연한 강조
+      gold: "#c8960a",     // 별점/평점 표시용 금색
+      red: "#d32f2f",      // 오류 메시지, 자동차 카테고리
+      green: "#1a7a3a",    // 성공 메시지, 가전 카테고리
+      blue: "#1a5cff",     // IT/전자 카테고리, 링크
+      shadow: "0 2px 12px rgba(0,0,0,0.08)", // 공통 그림자
+    };
+ 
+    // 기술자 전문 분야 카테고리 → 지도 핀(flag) 색상 매핑
+    const TECH_CATEGORIES = {
+      "Electronics/IT": C.blue,      // 파란 핀
+      "Automotive": C.red,           // 빨간 핀
+      "Home Appliances": C.green,    // 초록 핀
+      "Plumbing/Home": C.gold        // 금색 핀
+    };
+ 
+    /* ══════ SHARED STYLE CONSTANTS (must be before all components) ══════ */
+    // 공통 인풋 스타일: 전체 너비, 패딩, 테두리, 폰트 통일
+    const inputStyle = { width:"100%", padding:"12px 14px", border:`1px solid ${C.border}`, background:C.white, boxSizing:"border-box", outline:"none", fontSize:14, color:C.text };
+    // 고스트 버튼: 투명 배경 + 검정 테두리 (보조 액션용)
+    const ghostBtn = { background:"transparent", border:`1px solid ${C.text}`, padding:"8px 16px", cursor:"pointer", fontSize:13, fontWeight:700, color:C.text };
+    // 강조 버튼: 검정 배경 + 흰 글씨 (주요 액션용)
+    const accentBtn = { background:C.text, border:"none", color:C.white, padding:"8px 16px", cursor:"pointer", fontSize:13, fontWeight:700 };
+    // 카테고리 필터 버튼: 작은 폰트, 줄바꿈 없음
+    const categoryBtn = { padding:"8px 16px", fontSize:12, fontWeight:700, cursor:"pointer", border:`1px solid ${C.border}`, whiteSpace:"nowrap" };
+ 
+    /* ══════ ALL WORLD COUNTRIES WITH PHONE CODES ══════ */
+    // 전화번호 국가코드 선택용 드롭다운 데이터
+    // code: 국제전화코드, name: 국가명(영문), flag: 이모지 국기
+    // 기술자 회원가입 시 전화번호 입력 필드에서 사용됨 (195개국)
+    const ALL_COUNTRIES = [
+      { code:"-", name:"— Select Country —", flag:"" },
+      { code:"+93", name:"Afghanistan", flag:"🇦🇫" },
+      { code:"+355", name:"Albania", flag:"🇦🇱" },
+      { code:"+213", name:"Algeria", flag:"🇩🇿" },
+      { code:"+376", name:"Andorra", flag:"🇦🇩" },
+      { code:"+244", name:"Angola", flag:"🇦🇴" },
+      { code:"+1-268", name:"Antigua and Barbuda", flag:"🇦🇬" },
+      { code:"+54", name:"Argentina", flag:"🇦🇷" },
+      { code:"+374", name:"Armenia", flag:"🇦🇲" },
+      { code:"+61", name:"Australia", flag:"🇦🇺" },
+      { code:"+43", name:"Austria", flag:"🇦🇹" },
+      { code:"+994", name:"Azerbaijan", flag:"🇦🇿" },
+      { code:"+1-242", name:"Bahamas", flag:"🇧🇸" },
+      { code:"+973", name:"Bahrain", flag:"🇧🇭" },
+      { code:"+880", name:"Bangladesh", flag:"🇧🇩" },
+      { code:"+1-246", name:"Barbados", flag:"🇧🇧" },
+      { code:"+375", name:"Belarus", flag:"🇧🇾" },
+      { code:"+32", name:"Belgium", flag:"🇧🇪" },
+      { code:"+501", name:"Belize", flag:"🇧🇿" },
+      { code:"+229", name:"Benin", flag:"🇧🇯" },
+      { code:"+975", name:"Bhutan", flag:"🇧🇹" },
+      { code:"+591", name:"Bolivia", flag:"🇧🇴" },
+      { code:"+387", name:"Bosnia and Herzegovina", flag:"🇧🇦" },
+      { code:"+267", name:"Botswana", flag:"🇧🇼" },
+      { code:"+55", name:"Brazil", flag:"🇧🇷" },
+      { code:"+673", name:"Brunei", flag:"🇧🇳" },
+      { code:"+359", name:"Bulgaria", flag:"🇧🇬" },
+      { code:"+226", name:"Burkina Faso", flag:"🇧🇫" },
+      { code:"+257", name:"Burundi", flag:"🇧🇮" },
+      { code:"+238", name:"Cabo Verde", flag:"🇨🇻" },
+      { code:"+855", name:"Cambodia", flag:"🇰🇭" },
+      { code:"+237", name:"Cameroon", flag:"🇨🇲" },
+      { code:"+1", name:"Canada", flag:"🇨🇦" },
+      { code:"+236", name:"Central African Republic", flag:"🇨🇫" },
+      { code:"+235", name:"Chad", flag:"🇹🇩" },
+      { code:"+56", name:"Chile", flag:"🇨🇱" },
+      { code:"+86", name:"China", flag:"🇨🇳" },
+      { code:"+57", name:"Colombia", flag:"🇨🇴" },
+      { code:"+269", name:"Comoros", flag:"🇰🇲" },
+      { code:"+242", name:"Congo", flag:"🇨🇬" },
+      { code:"+243", name:"Congo (DRC)", flag:"🇨🇩" },
+      { code:"+506", name:"Costa Rica", flag:"🇨🇷" },
+      { code:"+385", name:"Croatia", flag:"🇭🇷" },
+      { code:"+53", name:"Cuba", flag:"🇨🇺" },
+      { code:"+357", name:"Cyprus", flag:"🇨🇾" },
+      { code:"+420", name:"Czech Republic", flag:"🇨🇿" },
+      { code:"+45", name:"Denmark", flag:"🇩🇰" },
+      { code:"+253", name:"Djibouti", flag:"🇩🇯" },
+      { code:"+1-767", name:"Dominica", flag:"🇩🇲" },
+      { code:"+1-809", name:"Dominican Republic", flag:"🇩🇴" },
+      { code:"+670", name:"East Timor", flag:"🇹🇱" },
+      { code:"+593", name:"Ecuador", flag:"🇪🇨" },
+      { code:"+20", name:"Egypt", flag:"🇪🇬" },
+      { code:"+503", name:"El Salvador", flag:"🇸🇻" },
+      { code:"+240", name:"Equatorial Guinea", flag:"🇬🇶" },
+      { code:"+291", name:"Eritrea", flag:"🇪🇷" },
+      { code:"+372", name:"Estonia", flag:"🇪🇪" },
+      { code:"+268", name:"Eswatini", flag:"🇸🇿" },
+      { code:"+251", name:"Ethiopia", flag:"🇪🇹" },
+      { code:"+679", name:"Fiji", flag:"🇫🇯" },
+      { code:"+358", name:"Finland", flag:"🇫🇮" },
+      { code:"+33", name:"France", flag:"🇫🇷" },
+      { code:"+241", name:"Gabon", flag:"🇬🇦" },
+      { code:"+220", name:"Gambia", flag:"🇬🇲" },
+      { code:"+995", name:"Georgia", flag:"🇬🇪" },
+      { code:"+49", name:"Germany", flag:"🇩🇪" },
+      { code:"+233", name:"Ghana", flag:"🇬🇭" },
+      { code:"+30", name:"Greece", flag:"🇬🇷" },
+      { code:"+1-473", name:"Grenada", flag:"🇬🇩" },
+      { code:"+502", name:"Guatemala", flag:"🇬🇹" },
+      { code:"+224", name:"Guinea", flag:"🇬🇳" },
+      { code:"+245", name:"Guinea-Bissau", flag:"🇬🇼" },
+      { code:"+592", name:"Guyana", flag:"🇬🇾" },
+      { code:"+509", name:"Haiti", flag:"🇭🇹" },
+      { code:"+504", name:"Honduras", flag:"🇭🇳" },
+      { code:"+36", name:"Hungary", flag:"🇭🇺" },
+      { code:"+354", name:"Iceland", flag:"🇮🇸" },
+      { code:"+91", name:"India", flag:"🇮🇳" },
+      { code:"+62", name:"Indonesia", flag:"🇮🇩" },
+      { code:"+98", name:"Iran", flag:"🇮🇷" },
+      { code:"+964", name:"Iraq", flag:"🇮🇶" },
+      { code:"+353", name:"Ireland", flag:"🇮🇪" },
+      { code:"+972", name:"Israel", flag:"🇮🇱" },
+      { code:"+39", name:"Italy", flag:"🇮🇹" },
+      { code:"+1-876", name:"Jamaica", flag:"🇯🇲" },
+      { code:"+81", name:"Japan", flag:"🇯🇵" },
+      { code:"+962", name:"Jordan", flag:"🇯🇴" },
+      { code:"+7", name:"Kazakhstan", flag:"🇰🇿" },
+      { code:"+254", name:"Kenya", flag:"🇰🇪" },
+      { code:"+686", name:"Kiribati", flag:"🇰🇮" },
+      { code:"+850", name:"North Korea", flag:"🇰🇵" },
+      { code:"+82", name:"South Korea", flag:"🇰🇷" },
+      { code:"+383", name:"Kosovo", flag:"🇽🇰" },
+      { code:"+965", name:"Kuwait", flag:"🇰🇼" },
+      { code:"+996", name:"Kyrgyzstan", flag:"🇰🇬" },
+      { code:"+856", name:"Laos", flag:"🇱🇦" },
+      { code:"+371", name:"Latvia", flag:"🇱🇻" },
+      { code:"+961", name:"Lebanon", flag:"🇱🇧" },
+      { code:"+266", name:"Lesotho", flag:"🇱🇸" },
+      { code:"+231", name:"Liberia", flag:"🇱🇷" },
+      { code:"+218", name:"Libya", flag:"🇱🇾" },
+      { code:"+423", name:"Liechtenstein", flag:"🇱🇮" },
+      { code:"+370", name:"Lithuania", flag:"🇱🇹" },
+      { code:"+352", name:"Luxembourg", flag:"🇱🇺" },
+      { code:"+261", name:"Madagascar", flag:"🇲🇬" },
+      { code:"+265", name:"Malawi", flag:"🇲🇼" },
+      { code:"+60", name:"Malaysia", flag:"🇲🇾" },
+      { code:"+960", name:"Maldives", flag:"🇲🇻" },
+      { code:"+223", name:"Mali", flag:"🇲🇱" },
+      { code:"+356", name:"Malta", flag:"🇲🇹" },
+      { code:"+692", name:"Marshall Islands", flag:"🇲🇭" },
+      { code:"+222", name:"Mauritania", flag:"🇲🇷" },
+      { code:"+230", name:"Mauritius", flag:"🇲🇺" },
+      { code:"+52", name:"Mexico", flag:"🇲🇽" },
+      { code:"+691", name:"Micronesia", flag:"🇫🇲" },
+      { code:"+373", name:"Moldova", flag:"🇲🇩" },
+      { code:"+377", name:"Monaco", flag:"🇲🇨" },
+      { code:"+976", name:"Mongolia", flag:"🇲🇳" },
+      { code:"+382", name:"Montenegro", flag:"🇲🇪" },
+      { code:"+212", name:"Morocco", flag:"🇲🇦" },
+      { code:"+258", name:"Mozambique", flag:"🇲🇿" },
+      { code:"+95", name:"Myanmar", flag:"🇲🇲" },
+      { code:"+264", name:"Namibia", flag:"🇳🇦" },
+      { code:"+674", name:"Nauru", flag:"🇳🇷" },
+      { code:"+977", name:"Nepal", flag:"🇳🇵" },
+      { code:"+31", name:"Netherlands", flag:"🇳🇱" },
+      { code:"+64", name:"New Zealand", flag:"🇳🇿" },
+      { code:"+505", name:"Nicaragua", flag:"🇳🇮" },
+      { code:"+227", name:"Niger", flag:"🇳🇪" },
+      { code:"+234", name:"Nigeria", flag:"🇳🇬" },
+      { code:"+389", name:"North Macedonia", flag:"🇲🇰" },
+      { code:"+47", name:"Norway", flag:"🇳🇴" },
+      { code:"+968", name:"Oman", flag:"🇴🇲" },
+      { code:"+92", name:"Pakistan", flag:"🇵🇰" },
+      { code:"+680", name:"Palau", flag:"🇵🇼" },
+      { code:"+507", name:"Panama", flag:"🇵🇦" },
+      { code:"+675", name:"Papua New Guinea", flag:"🇵🇬" },
+      { code:"+595", name:"Paraguay", flag:"🇵🇾" },
+      { code:"+51", name:"Peru", flag:"🇵🇪" },
+      { code:"+63", name:"Philippines", flag:"🇵🇭" },
+      { code:"+48", name:"Poland", flag:"🇵🇱" },
+      { code:"+351", name:"Portugal", flag:"🇵🇹" },
+      { code:"+974", name:"Qatar", flag:"🇶🇦" },
+      { code:"+40", name:"Romania", flag:"🇷🇴" },
+      { code:"+7", name:"Russia", flag:"🇷🇺" },
+      { code:"+250", name:"Rwanda", flag:"🇷🇼" },
+      { code:"+1-869", name:"Saint Kitts and Nevis", flag:"🇰🇳" },
+      { code:"+1-758", name:"Saint Lucia", flag:"🇱🇨" },
+      { code:"+1-784", name:"Saint Vincent and the Grenadines", flag:"🇻🇨" },
+      { code:"+685", name:"Samoa", flag:"🇼🇸" },
+      { code:"+378", name:"San Marino", flag:"🇸🇲" },
+      { code:"+239", name:"Sao Tome and Principe", flag:"🇸🇹" },
+      { code:"+966", name:"Saudi Arabia", flag:"🇸🇦" },
+      { code:"+221", name:"Senegal", flag:"🇸🇳" },
+      { code:"+381", name:"Serbia", flag:"🇷🇸" },
+      { code:"+248", name:"Seychelles", flag:"🇸🇨" },
+      { code:"+232", name:"Sierra Leone", flag:"🇸🇱" },
+      { code:"+65", name:"Singapore", flag:"🇸🇬" },
+      { code:"+421", name:"Slovakia", flag:"🇸🇰" },
+      { code:"+386", name:"Slovenia", flag:"🇸🇮" },
+      { code:"+677", name:"Solomon Islands", flag:"🇸🇧" },
+      { code:"+252", name:"Somalia", flag:"🇸🇴" },
+      { code:"+27", name:"South Africa", flag:"🇿🇦" },
+      { code:"+211", name:"South Sudan", flag:"🇸🇸" },
+      { code:"+34", name:"Spain", flag:"🇪🇸" },
+      { code:"+94", name:"Sri Lanka", flag:"🇱🇰" },
+      { code:"+249", name:"Sudan", flag:"🇸🇩" },
+      { code:"+597", name:"Suriname", flag:"🇸🇷" },
+      { code:"+46", name:"Sweden", flag:"🇸🇪" },
+      { code:"+41", name:"Switzerland", flag:"🇨🇭" },
+      { code:"+963", name:"Syria", flag:"🇸🇾" },
+      { code:"+886", name:"Taiwan", flag:"🇹🇼" },
+      { code:"+992", name:"Tajikistan", flag:"🇹🇯" },
+      { code:"+255", name:"Tanzania", flag:"🇹🇿" },
+      { code:"+66", name:"Thailand", flag:"🇹🇭" },
+      { code:"+228", name:"Togo", flag:"🇹🇬" },
+      { code:"+676", name:"Tonga", flag:"🇹🇴" },
+      { code:"+1-868", name:"Trinidad and Tobago", flag:"🇹🇹" },
+      { code:"+216", name:"Tunisia", flag:"🇹🇳" },
+      { code:"+90", name:"Turkey", flag:"🇹🇷" },
+      { code:"+993", name:"Turkmenistan", flag:"🇹🇲" },
+      { code:"+688", name:"Tuvalu", flag:"🇹🇻" },
+      { code:"+256", name:"Uganda", flag:"🇺🇬" },
+      { code:"+380", name:"Ukraine", flag:"🇺🇦" },
+      { code:"+971", name:"United Arab Emirates", flag:"🇦🇪" },
+      { code:"+44", name:"United Kingdom", flag:"🇬🇧" },
+      { code:"+1", name:"United States", flag:"🇺🇸" },
+      { code:"+598", name:"Uruguay", flag:"🇺🇾" },
+      { code:"+998", name:"Uzbekistan", flag:"🇺🇿" },
+      { code:"+678", name:"Vanuatu", flag:"🇻🇺" },
+      { code:"+58", name:"Venezuela", flag:"🇻🇪" },
+      { code:"+84", name:"Vietnam", flag:"🇻🇳" },
+      { code:"+967", name:"Yemen", flag:"🇾🇪" },
+      { code:"+260", name:"Zambia", flag:"🇿🇲" },
+      { code:"+263", name:"Zimbabwe", flag:"🇿🇼" },
+    ];
+ 
+    /* ══════ LANGUAGES ══════ */
+    // 지원 언어 목록: 설정 모달에서 앱 표시 언어 선택에 사용
+    // code: ISO 639-1 언어코드, label: 영문명, native: 해당 언어로 표기된 이름
+    const LANGUAGES = [
+      { code:"en", label:"English", native:"English" },
+      { code:"ko", label:"Korean", native:"한국어" },
+      { code:"ja", label:"Japanese", native:"日本語" },
+      { code:"zh", label:"Chinese", native:"中文" },
+      { code:"es", label:"Spanish", native:"Español" },
+      { code:"fr", label:"French", native:"Français" },
+      { code:"de", label:"German", native:"Deutsch" },
+      { code:"pt", label:"Portuguese", native:"Português" },
+      { code:"ru", label:"Russian", native:"Русский" },
+      { code:"ar", label:"Arabic", native:"العربية" },
+      { code:"hi", label:"Hindi", native:"हिन्दी" },
+      { code:"it", label:"Italian", native:"Italiano" },
+      { code:"tr", label:"Turkish", native:"Türkçe" },
+      { code:"nl", label:"Dutch", native:"Nederlands" },
+      { code:"vi", label:"Vietnamese", native:"Tiếng Việt" },
+    ];
+ 
+    /* ══════ PROFILE COLORS (default profiles) ══════ */
+    // 프로필 사진 없을 때 기본으로 사용하는 배경색 팔레트 (10가지)
+    // 회원가입/프로필 설정 모달에서 사용자가 선택 가능
+    const PROFILE_COLORS = ["#1a5cff","#d32f2f","#1a7a3a","#c8960a","#7b1fa2","#e64a19","#00838f","#558b2f","#4e342e","#37474f"];
+ 
+    /* ══════ LOCAL STORAGE SYSTEM ══════ */
+    // 인메모리 폴백 저장소: localStorage 접근 실패 시 사용
+    const memoryStore = { technicians: [], reviews: [], users: [], posts: [], adSlots: [] };
+    // DB: localStorage 기반 간단한 Key-Value 데이터베이스 래퍼
+    // wrc_v8_{key} 형태로 저장하여 버전 충돌 방지
+    const DB = {
+      // 데이터 조회: localStorage → 실패 시 memoryStore 반환
+      get(key) {
+        try { const data = localStorage.getItem(`wrc_v8_${key}`); return data ? JSON.parse(data) : (memoryStore[key] || []); } 
+        catch (e) { return memoryStore[key] || []; }
+      },
+      // 데이터 저장: memoryStore와 localStorage 동시 업데이트
+      set(key, val) {
+        try { memoryStore[key] = val; localStorage.setItem(`wrc_v8_${key}`, JSON.stringify(val)); } 
+        catch (e) { memoryStore[key] = val; }
+      }
+    };
+ 
