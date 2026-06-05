@@ -1,0 +1,2048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WRC — World Repair Championship</title>
+  
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    html, body, #root {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background-color: #f8f7f5; font-family: 'Inter', sans-serif; overflow: hidden;
+    }
+    .leaflet-container { font-family: 'Inter', sans-serif !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    /* STRICT REQUIREMENT: Sharp Rectangular UI Everywhere */
+    input, button, select, textarea, div { border-radius: 0 !important; }
+
+    /* Intro overlay */
+    @keyframes fadeIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+    .intro-animate { animation: fadeIn 0.6s ease forwards; }
+
+    /* Settings dropdown */
+    .settings-dropdown { position:absolute; right:0; top:calc(100% + 8px); background:#fff; border:2px solid #1a1a1a; min-width:200px; z-index:99999; box-shadow:0 4px 24px rgba(0,0,0,0.12); }
+    .settings-item { padding:12px 16px; cursor:pointer; font-size:13px; font-weight:600; border-bottom:1px solid #e5e3df; display:flex; align-items:center; gap:8px; }
+    .settings-item:hover { background:#f0f0f0; }
+    .settings-item:last-child { border-bottom:none; }
+  </style>
+</head>
+<body>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    /* ═══════════════════ DESIGN SYSTEM ════════════════ */
+    const C = {
+      bg: "#f8f7f5", white: "#ffffff", surface: "#fafaf9",
+      border: "#e5e3df", borderDark: "#ccc9c3",
+      text: "#1a1a1a", textMid: "#444", textMuted: "#888",
+      accent: "#1a1a1a", accentLight: "#f0f0f0",
+      gold: "#c8960a", red: "#d32f2f", green: "#1a7a3a", blue: "#1a5cff",
+      shadow: "0 2px 12px rgba(0,0,0,0.08)",
+    };
+
+    const TECH_CATEGORIES = {
+      "Electronics/IT": C.blue,
+      "Automotive": C.red,
+      "Home Appliances": C.green,
+      "Plumbing/Home": C.gold
+    };
+
+    /* ══════ SHARED STYLE CONSTANTS (must be before all components) ══════ */
+    const inputStyle = { width:"100%", padding:"12px 14px", border:`1px solid ${C.border}`, background:C.white, boxSizing:"border-box", outline:"none", fontSize:14, color:C.text };
+    const ghostBtn = { background:"transparent", border:`1px solid ${C.text}`, padding:"8px 16px", cursor:"pointer", fontSize:13, fontWeight:700, color:C.text };
+    const accentBtn = { background:C.text, border:"none", color:C.white, padding:"8px 16px", cursor:"pointer", fontSize:13, fontWeight:700 };
+    const categoryBtn = { padding:"8px 16px", fontSize:12, fontWeight:700, cursor:"pointer", border:`1px solid ${C.border}`, whiteSpace:"nowrap" };
+
+    /* ══════ ALL WORLD COUNTRIES WITH PHONE CODES ══════ */
+    const ALL_COUNTRIES = [
+      { code:"-", name:"— Select Country —", flag:"" },
+      { code:"+93", name:"Afghanistan", flag:"🇦🇫" },
+      { code:"+355", name:"Albania", flag:"🇦🇱" },
+      { code:"+213", name:"Algeria", flag:"🇩🇿" },
+      { code:"+376", name:"Andorra", flag:"🇦🇩" },
+      { code:"+244", name:"Angola", flag:"🇦🇴" },
+      { code:"+1-268", name:"Antigua and Barbuda", flag:"🇦🇬" },
+      { code:"+54", name:"Argentina", flag:"🇦🇷" },
+      { code:"+374", name:"Armenia", flag:"🇦🇲" },
+      { code:"+61", name:"Australia", flag:"🇦🇺" },
+      { code:"+43", name:"Austria", flag:"🇦🇹" },
+      { code:"+994", name:"Azerbaijan", flag:"🇦🇿" },
+      { code:"+1-242", name:"Bahamas", flag:"🇧🇸" },
+      { code:"+973", name:"Bahrain", flag:"🇧🇭" },
+      { code:"+880", name:"Bangladesh", flag:"🇧🇩" },
+      { code:"+1-246", name:"Barbados", flag:"🇧🇧" },
+      { code:"+375", name:"Belarus", flag:"🇧🇾" },
+      { code:"+32", name:"Belgium", flag:"🇧🇪" },
+      { code:"+501", name:"Belize", flag:"🇧🇿" },
+      { code:"+229", name:"Benin", flag:"🇧🇯" },
+      { code:"+975", name:"Bhutan", flag:"🇧🇹" },
+      { code:"+591", name:"Bolivia", flag:"🇧🇴" },
+      { code:"+387", name:"Bosnia and Herzegovina", flag:"🇧🇦" },
+      { code:"+267", name:"Botswana", flag:"🇧🇼" },
+      { code:"+55", name:"Brazil", flag:"🇧🇷" },
+      { code:"+673", name:"Brunei", flag:"🇧🇳" },
+      { code:"+359", name:"Bulgaria", flag:"🇧🇬" },
+      { code:"+226", name:"Burkina Faso", flag:"🇧🇫" },
+      { code:"+257", name:"Burundi", flag:"🇧🇮" },
+      { code:"+238", name:"Cabo Verde", flag:"🇨🇻" },
+      { code:"+855", name:"Cambodia", flag:"🇰🇭" },
+      { code:"+237", name:"Cameroon", flag:"🇨🇲" },
+      { code:"+1", name:"Canada", flag:"🇨🇦" },
+      { code:"+236", name:"Central African Republic", flag:"🇨🇫" },
+      { code:"+235", name:"Chad", flag:"🇹🇩" },
+      { code:"+56", name:"Chile", flag:"🇨🇱" },
+      { code:"+86", name:"China", flag:"🇨🇳" },
+      { code:"+57", name:"Colombia", flag:"🇨🇴" },
+      { code:"+269", name:"Comoros", flag:"🇰🇲" },
+      { code:"+242", name:"Congo", flag:"🇨🇬" },
+      { code:"+243", name:"Congo (DRC)", flag:"🇨🇩" },
+      { code:"+506", name:"Costa Rica", flag:"🇨🇷" },
+      { code:"+385", name:"Croatia", flag:"🇭🇷" },
+      { code:"+53", name:"Cuba", flag:"🇨🇺" },
+      { code:"+357", name:"Cyprus", flag:"🇨🇾" },
+      { code:"+420", name:"Czech Republic", flag:"🇨🇿" },
+      { code:"+45", name:"Denmark", flag:"🇩🇰" },
+      { code:"+253", name:"Djibouti", flag:"🇩🇯" },
+      { code:"+1-767", name:"Dominica", flag:"🇩🇲" },
+      { code:"+1-809", name:"Dominican Republic", flag:"🇩🇴" },
+      { code:"+670", name:"East Timor", flag:"🇹🇱" },
+      { code:"+593", name:"Ecuador", flag:"🇪🇨" },
+      { code:"+20", name:"Egypt", flag:"🇪🇬" },
+      { code:"+503", name:"El Salvador", flag:"🇸🇻" },
+      { code:"+240", name:"Equatorial Guinea", flag:"🇬🇶" },
+      { code:"+291", name:"Eritrea", flag:"🇪🇷" },
+      { code:"+372", name:"Estonia", flag:"🇪🇪" },
+      { code:"+268", name:"Eswatini", flag:"🇸🇿" },
+      { code:"+251", name:"Ethiopia", flag:"🇪🇹" },
+      { code:"+679", name:"Fiji", flag:"🇫🇯" },
+      { code:"+358", name:"Finland", flag:"🇫🇮" },
+      { code:"+33", name:"France", flag:"🇫🇷" },
+      { code:"+241", name:"Gabon", flag:"🇬🇦" },
+      { code:"+220", name:"Gambia", flag:"🇬🇲" },
+      { code:"+995", name:"Georgia", flag:"🇬🇪" },
+      { code:"+49", name:"Germany", flag:"🇩🇪" },
+      { code:"+233", name:"Ghana", flag:"🇬🇭" },
+      { code:"+30", name:"Greece", flag:"🇬🇷" },
+      { code:"+1-473", name:"Grenada", flag:"🇬🇩" },
+      { code:"+502", name:"Guatemala", flag:"🇬🇹" },
+      { code:"+224", name:"Guinea", flag:"🇬🇳" },
+      { code:"+245", name:"Guinea-Bissau", flag:"🇬🇼" },
+      { code:"+592", name:"Guyana", flag:"🇬🇾" },
+      { code:"+509", name:"Haiti", flag:"🇭🇹" },
+      { code:"+504", name:"Honduras", flag:"🇭🇳" },
+      { code:"+36", name:"Hungary", flag:"🇭🇺" },
+      { code:"+354", name:"Iceland", flag:"🇮🇸" },
+      { code:"+91", name:"India", flag:"🇮🇳" },
+      { code:"+62", name:"Indonesia", flag:"🇮🇩" },
+      { code:"+98", name:"Iran", flag:"🇮🇷" },
+      { code:"+964", name:"Iraq", flag:"🇮🇶" },
+      { code:"+353", name:"Ireland", flag:"🇮🇪" },
+      { code:"+972", name:"Israel", flag:"🇮🇱" },
+      { code:"+39", name:"Italy", flag:"🇮🇹" },
+      { code:"+1-876", name:"Jamaica", flag:"🇯🇲" },
+      { code:"+81", name:"Japan", flag:"🇯🇵" },
+      { code:"+962", name:"Jordan", flag:"🇯🇴" },
+      { code:"+7", name:"Kazakhstan", flag:"🇰🇿" },
+      { code:"+254", name:"Kenya", flag:"🇰🇪" },
+      { code:"+686", name:"Kiribati", flag:"🇰🇮" },
+      { code:"+850", name:"North Korea", flag:"🇰🇵" },
+      { code:"+82", name:"South Korea", flag:"🇰🇷" },
+      { code:"+383", name:"Kosovo", flag:"🇽🇰" },
+      { code:"+965", name:"Kuwait", flag:"🇰🇼" },
+      { code:"+996", name:"Kyrgyzstan", flag:"🇰🇬" },
+      { code:"+856", name:"Laos", flag:"🇱🇦" },
+      { code:"+371", name:"Latvia", flag:"🇱🇻" },
+      { code:"+961", name:"Lebanon", flag:"🇱🇧" },
+      { code:"+266", name:"Lesotho", flag:"🇱🇸" },
+      { code:"+231", name:"Liberia", flag:"🇱🇷" },
+      { code:"+218", name:"Libya", flag:"🇱🇾" },
+      { code:"+423", name:"Liechtenstein", flag:"🇱🇮" },
+      { code:"+370", name:"Lithuania", flag:"🇱🇹" },
+      { code:"+352", name:"Luxembourg", flag:"🇱🇺" },
+      { code:"+261", name:"Madagascar", flag:"🇲🇬" },
+      { code:"+265", name:"Malawi", flag:"🇲🇼" },
+      { code:"+60", name:"Malaysia", flag:"🇲🇾" },
+      { code:"+960", name:"Maldives", flag:"🇲🇻" },
+      { code:"+223", name:"Mali", flag:"🇲🇱" },
+      { code:"+356", name:"Malta", flag:"🇲🇹" },
+      { code:"+692", name:"Marshall Islands", flag:"🇲🇭" },
+      { code:"+222", name:"Mauritania", flag:"🇲🇷" },
+      { code:"+230", name:"Mauritius", flag:"🇲🇺" },
+      { code:"+52", name:"Mexico", flag:"🇲🇽" },
+      { code:"+691", name:"Micronesia", flag:"🇫🇲" },
+      { code:"+373", name:"Moldova", flag:"🇲🇩" },
+      { code:"+377", name:"Monaco", flag:"🇲🇨" },
+      { code:"+976", name:"Mongolia", flag:"🇲🇳" },
+      { code:"+382", name:"Montenegro", flag:"🇲🇪" },
+      { code:"+212", name:"Morocco", flag:"🇲🇦" },
+      { code:"+258", name:"Mozambique", flag:"🇲🇿" },
+      { code:"+95", name:"Myanmar", flag:"🇲🇲" },
+      { code:"+264", name:"Namibia", flag:"🇳🇦" },
+      { code:"+674", name:"Nauru", flag:"🇳🇷" },
+      { code:"+977", name:"Nepal", flag:"🇳🇵" },
+      { code:"+31", name:"Netherlands", flag:"🇳🇱" },
+      { code:"+64", name:"New Zealand", flag:"🇳🇿" },
+      { code:"+505", name:"Nicaragua", flag:"🇳🇮" },
+      { code:"+227", name:"Niger", flag:"🇳🇪" },
+      { code:"+234", name:"Nigeria", flag:"🇳🇬" },
+      { code:"+389", name:"North Macedonia", flag:"🇲🇰" },
+      { code:"+47", name:"Norway", flag:"🇳🇴" },
+      { code:"+968", name:"Oman", flag:"🇴🇲" },
+      { code:"+92", name:"Pakistan", flag:"🇵🇰" },
+      { code:"+680", name:"Palau", flag:"🇵🇼" },
+      { code:"+507", name:"Panama", flag:"🇵🇦" },
+      { code:"+675", name:"Papua New Guinea", flag:"🇵🇬" },
+      { code:"+595", name:"Paraguay", flag:"🇵🇾" },
+      { code:"+51", name:"Peru", flag:"🇵🇪" },
+      { code:"+63", name:"Philippines", flag:"🇵🇭" },
+      { code:"+48", name:"Poland", flag:"🇵🇱" },
+      { code:"+351", name:"Portugal", flag:"🇵🇹" },
+      { code:"+974", name:"Qatar", flag:"🇶🇦" },
+      { code:"+40", name:"Romania", flag:"🇷🇴" },
+      { code:"+7", name:"Russia", flag:"🇷🇺" },
+      { code:"+250", name:"Rwanda", flag:"🇷🇼" },
+      { code:"+1-869", name:"Saint Kitts and Nevis", flag:"🇰🇳" },
+      { code:"+1-758", name:"Saint Lucia", flag:"🇱🇨" },
+      { code:"+1-784", name:"Saint Vincent and the Grenadines", flag:"🇻🇨" },
+      { code:"+685", name:"Samoa", flag:"🇼🇸" },
+      { code:"+378", name:"San Marino", flag:"🇸🇲" },
+      { code:"+239", name:"Sao Tome and Principe", flag:"🇸🇹" },
+      { code:"+966", name:"Saudi Arabia", flag:"🇸🇦" },
+      { code:"+221", name:"Senegal", flag:"🇸🇳" },
+      { code:"+381", name:"Serbia", flag:"🇷🇸" },
+      { code:"+248", name:"Seychelles", flag:"🇸🇨" },
+      { code:"+232", name:"Sierra Leone", flag:"🇸🇱" },
+      { code:"+65", name:"Singapore", flag:"🇸🇬" },
+      { code:"+421", name:"Slovakia", flag:"🇸🇰" },
+      { code:"+386", name:"Slovenia", flag:"🇸🇮" },
+      { code:"+677", name:"Solomon Islands", flag:"🇸🇧" },
+      { code:"+252", name:"Somalia", flag:"🇸🇴" },
+      { code:"+27", name:"South Africa", flag:"🇿🇦" },
+      { code:"+211", name:"South Sudan", flag:"🇸🇸" },
+      { code:"+34", name:"Spain", flag:"🇪🇸" },
+      { code:"+94", name:"Sri Lanka", flag:"🇱🇰" },
+      { code:"+249", name:"Sudan", flag:"🇸🇩" },
+      { code:"+597", name:"Suriname", flag:"🇸🇷" },
+      { code:"+46", name:"Sweden", flag:"🇸🇪" },
+      { code:"+41", name:"Switzerland", flag:"🇨🇭" },
+      { code:"+963", name:"Syria", flag:"🇸🇾" },
+      { code:"+886", name:"Taiwan", flag:"🇹🇼" },
+      { code:"+992", name:"Tajikistan", flag:"🇹🇯" },
+      { code:"+255", name:"Tanzania", flag:"🇹🇿" },
+      { code:"+66", name:"Thailand", flag:"🇹🇭" },
+      { code:"+228", name:"Togo", flag:"🇹🇬" },
+      { code:"+676", name:"Tonga", flag:"🇹🇴" },
+      { code:"+1-868", name:"Trinidad and Tobago", flag:"🇹🇹" },
+      { code:"+216", name:"Tunisia", flag:"🇹🇳" },
+      { code:"+90", name:"Turkey", flag:"🇹🇷" },
+      { code:"+993", name:"Turkmenistan", flag:"🇹🇲" },
+      { code:"+688", name:"Tuvalu", flag:"🇹🇻" },
+      { code:"+256", name:"Uganda", flag:"🇺🇬" },
+      { code:"+380", name:"Ukraine", flag:"🇺🇦" },
+      { code:"+971", name:"United Arab Emirates", flag:"🇦🇪" },
+      { code:"+44", name:"United Kingdom", flag:"🇬🇧" },
+      { code:"+1", name:"United States", flag:"🇺🇸" },
+      { code:"+598", name:"Uruguay", flag:"🇺🇾" },
+      { code:"+998", name:"Uzbekistan", flag:"🇺🇿" },
+      { code:"+678", name:"Vanuatu", flag:"🇻🇺" },
+      { code:"+58", name:"Venezuela", flag:"🇻🇪" },
+      { code:"+84", name:"Vietnam", flag:"🇻🇳" },
+      { code:"+967", name:"Yemen", flag:"🇾🇪" },
+      { code:"+260", name:"Zambia", flag:"🇿🇲" },
+      { code:"+263", name:"Zimbabwe", flag:"🇿🇼" },
+    ];
+
+    /* ══════ LANGUAGES ══════ */
+    const LANGUAGES = [
+      { code:"en", label:"English", native:"English" },
+      { code:"ko", label:"Korean", native:"한국어" },
+      { code:"ja", label:"Japanese", native:"日本語" },
+      { code:"zh", label:"Chinese", native:"中文" },
+      { code:"es", label:"Spanish", native:"Español" },
+      { code:"fr", label:"French", native:"Français" },
+      { code:"de", label:"German", native:"Deutsch" },
+      { code:"pt", label:"Portuguese", native:"Português" },
+      { code:"ru", label:"Russian", native:"Русский" },
+      { code:"ar", label:"Arabic", native:"العربية" },
+      { code:"hi", label:"Hindi", native:"हिन्दी" },
+      { code:"it", label:"Italian", native:"Italiano" },
+      { code:"tr", label:"Turkish", native:"Türkçe" },
+      { code:"nl", label:"Dutch", native:"Nederlands" },
+      { code:"vi", label:"Vietnamese", native:"Tiếng Việt" },
+    ];
+
+    /* ══════ PROFILE COLORS (default profiles) ══════ */
+    const PROFILE_COLORS = ["#1a5cff","#d32f2f","#1a7a3a","#c8960a","#7b1fa2","#e64a19","#00838f","#558b2f","#4e342e","#37474f"];
+
+    /* ══════ LOCAL STORAGE SYSTEM ══════ */
+    const memoryStore = { technicians: [], reviews: [], users: [], posts: [], adSlots: [] };
+    const DB = {
+      get(key) {
+        try { const data = localStorage.getItem(`wrc_v8_${key}`); return data ? JSON.parse(data) : (memoryStore[key] || []); } 
+        catch (e) { return memoryStore[key] || []; }
+      },
+      set(key, val) {
+        try { memoryStore[key] = val; localStorage.setItem(`wrc_v8_${key}`, JSON.stringify(val)); } 
+        catch (e) { memoryStore[key] = val; }
+      }
+    };
+
+    function seedData() {
+      const users = DB.get("users");
+      if (!users.find(u => u.email === "ceo@wrc.com")) {
+        users.push({ id:"admin-founder", email:"ceo@wrc.com", password:"admin", name:"WRC Founder", userType:"admin", createdAt: Date.now(), profileColor: PROFILE_COLORS[0], nickname:"Founder", language:"en" });
+        DB.set("users", users);
+      }
+      // Demo technician account
+      if (!users.find(u => u.email === "tech@wrc.com")) {
+        users.push({ id:"demo-tech-user", email:"tech@wrc.com", password:"tech1234", name:"Kim Repair", userType:"technician", techId:"demo-tech-001", createdAt: Date.now(), profileColor: PROFILE_COLORS[2], nickname:"KimFix", language:"en", flagsOwned:5, flagsDeployed:0 });
+        DB.set("users", users);
+      }
+      // Demo technician profile with 5 pre-placed flags
+      const techs = DB.get("technicians");
+      if (!techs.find(t => t.id === "demo-tech-001")) {
+        // White card image (base64 tiny white png)
+        const whiteCard = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFElEQVQoU2P8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==";
+        const demoFlags = [
+          { id:"flag-demo-1", lat:37.5665, lng:126.9780, color:"#1a5cff", images:[whiteCard], description:"Seoul Electronics Hub — Fast repair for all devices.", createdAt: Date.now() },
+          { id:"flag-demo-2", lat:35.6762, lng:139.6503, color:"#d32f2f", images:[whiteCard], description:"Tokyo Auto Service — Engine & EV specialist.", createdAt: Date.now() },
+          { id:"flag-demo-3", lat:40.7128, lng:-74.0060, color:"#1a7a3a", images:[whiteCard], description:"New York Home Appliances — Same-day service.", createdAt: Date.now() },
+          { id:"flag-demo-4", lat:51.5074, lng:-0.1278, color:"#c8960a", images:[whiteCard], description:"London Plumbing Pro — Emergency callouts 24/7.", createdAt: Date.now() },
+          { id:"flag-demo-5", lat:48.8566, lng:2.3522, color:"#7b1fa2", images:[whiteCard], description:"Paris IT Repair — MacBook, PC, server support.", createdAt: Date.now() },
+        ];
+        techs.push({
+          id:"demo-tech-001", userId:"demo-tech-user", name:"Kim Repair", email:"tech@wrc.com",
+          phone:"+82 10-1234-5678", specialty:"Electronics/IT",
+          lat:37.5665, lng:126.9780,
+          stars:4.8, reviewCount:23, score:9900,
+          active:true, createdAt: Date.now(), bio:"10년 경력의 전자기기 수리 전문가입니다. Certified electronics technician with 10 years of experience.", posts:[],
+          flags: demoFlags,
+          flagsOwned:5, flagsDeployed:5,
+          flagImages:[whiteCard],
+        });
+        DB.set("technicians", techs);
+      }
+      // Init ad slots
+      if (!DB.get("adSlots").length) {
+        DB.set("adSlots", []);
+      }
+    }
+
+    const API = {
+      async getAllTechs() { return DB.get("technicians").filter(t=>t.active); },
+      async getTechById(id) { return DB.get("technicians").find(t=>t.id===id); },
+      async getReviews(techId) { return DB.get("reviews").filter(r=>r.techId===techId); },
+      async registerUser(data) {
+        const all = DB.get("users");
+        if (all.find(u=>u.email===data.email)) throw new Error("Email already registered in the system.");
+        const u = { ...data, id:`user-${Date.now()}`, createdAt:Date.now() };
+        all.push(u); DB.set("users", all); return u;
+      },
+      async updateUser(id, updates) {
+        const all = DB.get("users");
+        const idx = all.findIndex(u=>u.id===id);
+        if (idx>=0) { all[idx]={...all[idx],...updates}; DB.set("users", all); return all[idx]; }
+      },
+      async loginUser(email,pwd) {
+        if(!email || !pwd) throw new Error("Please enter email and password.");
+        const u = DB.get("users").find(u=>u.email===email);
+        if (!u||u.password!==pwd) throw new Error("Invalid email or password.");
+        return u;
+      },
+      async registerTech(data) {
+        const all = DB.get("technicians");
+        const t = { ...data, id:`tech-${Date.now()}`, stars:0, reviewCount:0, score:0, active:false, createdAt:Date.now(), bio:"", posts:[] };
+        all.push(t); DB.set("technicians", all); return t;
+      },
+      async updateTech(id, updates) {
+        const all = DB.get("technicians");
+        const idx = all.findIndex(t=>t.id===id);
+        if (idx>=0) { all[idx]={...all[idx],...updates}; DB.set("technicians", all); return all[idx]; }
+      },
+      async subscribe(techId) {
+        const all = DB.get("technicians");
+        const t = all.find(x=>x.id===techId);
+        if (t) { t.active=true; DB.set("technicians", all); }
+      },
+      async addReview(techId, review) {
+        const revs = DB.get("reviews");
+        revs.push({ id:`rv-${Date.now()}`, techId, ...review, createdAt:Date.now() });
+        DB.set("reviews", revs);
+        const allTechs = DB.get("technicians");
+        const t = allTechs.find(x=>x.id===techId);
+        if (t) {
+          const myRevs = revs.filter(r=>r.techId===techId);
+          t.stars = parseFloat((myRevs.reduce((s,r)=>s+r.stars,0)/myRevs.length).toFixed(1));
+          t.reviewCount = myRevs.length;
+          t.score = Math.floor(t.stars*1000 + t.reviewCount*500);
+          DB.set("technicians", allTechs);
+        }
+      },
+      async addPost(techId, post) {
+        const all = DB.get("technicians");
+        const t = all.find(x=>x.id===techId);
+        if (t) {
+          if (!t.posts) t.posts = [];
+          t.posts.push({ id:`post-${Date.now()}`, ...post, createdAt:Date.now() });
+          DB.set("technicians", all);
+          return t;
+        }
+      },
+      async getAdSlots() { return DB.get("adSlots") || []; },
+      async bookAdSlot(slot) {
+        const slots = DB.get("adSlots") || [];
+        slots.push({ ...slot, id:`ad-${Date.now()}`, createdAt: Date.now() });
+        DB.set("adSlots", slots);
+        return slots;
+      }
+    };
+
+    /* ══════════════ INTRO OVERLAY (Feature 1) ══════════════ */
+    function IntroOverlay({ onSkip }) {
+      const [step, setStep] = useState(0);
+      const steps = [
+        {
+          icon:"🌍",
+          title:"Welcome to WRC",
+          subtitle:"World Repair Championship",
+          body:"Find certified repair technicians anywhere on the globe. WRC connects consumers with verified professionals in Electronics, Automotive, Home Appliances, and Plumbing."
+        },
+        {
+          icon:"🗺️",
+          title:"Explore the Map",
+          subtitle:"Real-time global coverage",
+          body:"Browse our interactive world map to discover repair technicians near you or anywhere in the world. Click on any flag to view their profile, ratings, and contact details."
+        },
+        {
+          icon:"🚩",
+          title:"For Technicians",
+          subtitle:"Deploy your flag. Grow your business.",
+          body:"Register as a technician, get verified, and plant your flag on the map. A monthly subscription puts you in front of thousands of customers worldwide."
+        },
+        {
+          icon:"⭐",
+          title:"Trusted Reviews",
+          subtitle:"Real ratings from real customers",
+          body:"Every technician is ranked by verified customer reviews. The best rise to the top of our global leaderboard — transparency you can trust."
+        }
+      ];
+      const s = steps[step];
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(10,10,10,0.92)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:99999, flexDirection:"column" }}>
+          <div className="intro-animate" key={step} style={{ background:C.white, border:`3px solid ${C.text}`, padding:"48px 56px", maxWidth:500, width:"90%", textAlign:"center", position:"relative" }}>
+            <div style={{ fontSize:60, marginBottom:16 }}>{s.icon}</div>
+            <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.15em", color:C.textMuted, textTransform:"uppercase", marginBottom:8 }}>{s.subtitle}</div>
+            <h1 style={{ margin:"0 0 16px 0", fontSize:28, fontWeight:900 }}>{s.title}</h1>
+            <p style={{ color:C.textMid, fontSize:15, lineHeight:1.7, margin:"0 0 32px 0" }}>{s.body}</p>
+
+            {/* Step indicators */}
+            <div style={{ display:"flex", justifyContent:"center", gap:8, marginBottom:28 }}>
+              {steps.map((_, i) => (
+                <div key={i} onClick={() => setStep(i)} style={{ width:i===step?24:8, height:8, background:i===step?C.text:C.border, cursor:"pointer", transition:"width 0.3s" }} />
+              ))}
+            </div>
+
+            <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
+              {step < steps.length - 1 ? (
+                <>
+                  <button onClick={onSkip} style={{ background:"transparent", border:`1px solid ${C.border}`, padding:"10px 24px", cursor:"pointer", fontSize:13, fontWeight:600, color:C.textMuted }}>Skip</button>
+                  <button onClick={() => setStep(step+1)} style={{ background:C.text, border:"none", color:C.white, padding:"10px 32px", cursor:"pointer", fontSize:13, fontWeight:700 }}>Next →</button>
+                </>
+              ) : (
+                <button onClick={onSkip} style={{ background:C.text, border:"none", color:C.white, padding:"12px 48px", cursor:"pointer", fontSize:15, fontWeight:700 }}>Get Started 🚀</button>
+              )}
+            </div>
+          </div>
+          <button onClick={onSkip} style={{ marginTop:20, background:"transparent", border:"none", color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:13, textDecoration:"underline" }}>Skip introduction</button>
+        </div>
+      );
+    }
+
+    /* ══════════════ PROFILE SETUP MODAL (Feature 5) ══════════════ */
+    function ProfileSetupModal({ user, onComplete }) {
+      const [nickname, setNickname] = useState(user.name || "");
+      const [selectedColor, setSelectedColor] = useState(PROFILE_COLORS[Math.floor(Math.random()*PROFILE_COLORS.length)]);
+      const [profileImg, setProfileImg] = useState(null);
+      const [usePhoto, setUsePhoto] = useState(false);
+
+      const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => setProfileImg(ev.target.result);
+        reader.readAsDataURL(file);
+      };
+
+      const handleComplete = async () => {
+        if (!nickname.trim()) return alert("Please enter a nickname.");
+        const updates = {
+          nickname: nickname.trim(),
+          profileColor: selectedColor,
+          profileImg: usePhoto ? profileImg : null,
+          language: "en",
+        };
+        const updated = await API.updateUser(user.id, updates);
+        onComplete({ ...user, ...updates });
+      };
+
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:70000 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, padding:40, width:420, maxHeight:"90vh", overflowY:"auto" }}>
+            <h2 style={{ marginTop:0, fontWeight:900, fontSize:22, marginBottom:6 }}>Set Up Your Profile</h2>
+            <p style={{ color:C.textMid, fontSize:13, marginBottom:28 }}>You can change these later in Settings.</p>
+
+            {/* Preview */}
+            <div style={{ display:"flex", justifyContent:"center", marginBottom:28 }}>
+              <div style={{ width:80, height:80, background: usePhoto && profileImg ? "transparent" : selectedColor, border:`2px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
+                {usePhoto && profileImg
+                  ? <img src={profileImg} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  : <span style={{ color:"white", fontWeight:900, fontSize:32 }}>{(nickname||"?")[0].toUpperCase()}</span>
+                }
+              </div>
+            </div>
+
+            {/* Nickname */}
+            <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:6 }}>Nickname (duplicates allowed)</label>
+            <input value={nickname} onChange={e=>setNickname(e.target.value)} placeholder="Enter nickname..." style={{ width:"100%", padding:"12px 14px", border:`1px solid ${C.border}`, background:C.white, boxSizing:"border-box", outline:"none", fontSize:14, marginBottom:20 }} />
+
+            {/* Photo or Color */}
+            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+              <button onClick={()=>setUsePhoto(false)} style={{ flex:1, padding:10, fontWeight:700, border:`1px solid ${C.text}`, background:!usePhoto?C.text:"transparent", color:!usePhoto?C.white:C.text, cursor:"pointer", fontSize:13 }}>Color Profile</button>
+              <button onClick={()=>setUsePhoto(true)} style={{ flex:1, padding:10, fontWeight:700, border:`1px solid ${C.text}`, background:usePhoto?C.text:"transparent", color:usePhoto?C.white:C.text, cursor:"pointer", fontSize:13 }}>Upload Photo</button>
+            </div>
+
+            {!usePhoto ? (
+              <>
+                <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:10 }}>Choose Profile Color</label>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:24 }}>
+                  {PROFILE_COLORS.map(col => (
+                    <div key={col} onClick={()=>setSelectedColor(col)} style={{ width:36, height:36, background:col, cursor:"pointer", border: selectedColor===col ? `3px solid ${C.text}` : `2px solid transparent`, boxSizing:"border-box" }} />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div style={{ marginBottom:24 }}>
+                <input type="file" accept="image/*" onChange={handleImageUpload} style={{ fontSize:13 }} />
+              </div>
+            )}
+
+            <button onClick={handleComplete} style={{ background:C.text, border:"none", color:C.white, padding:"14px", fontSize:15, fontWeight:700, width:"100%", cursor:"pointer" }}>
+              Complete Setup →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ SETTINGS MODAL (Feature 6) ══════════════ */
+    function SettingsModal({ user, onClose, onUpdate }) {
+      const [tab, setTab] = useState("profile");
+      const [nickname, setNickname] = useState(user.nickname || user.name || "");
+      const [selectedColor, setSelectedColor] = useState(user.profileColor || PROFILE_COLORS[0]);
+      const [profileImg, setProfileImg] = useState(user.profileImg || null);
+      const [usePhoto, setUsePhoto] = useState(!!user.profileImg);
+      const [language, setLanguage] = useState(user.language || "en");
+      const [saved, setSaved] = useState(false);
+
+      const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => setProfileImg(ev.target.result);
+        reader.readAsDataURL(file);
+      };
+
+      const handleSave = async () => {
+        const updates = { nickname, profileColor: selectedColor, profileImg: usePhoto ? profileImg : null, language };
+        const updated = await API.updateUser(user.id, updates);
+        onUpdate({ ...user, ...updates });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      };
+
+      const tabStyle = (t) => ({ padding:"10px 20px", cursor:"pointer", fontWeight:700, fontSize:13, border:`1px solid ${C.border}`, background: tab===t?C.text:"transparent", color: tab===t?C.white:C.text });
+
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:80000 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, padding:0, width:460, maxHeight:"90vh", display:"flex", flexDirection:"column" }}>
+            <div style={{ padding:"20px 28px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <h2 style={{ margin:0, fontWeight:900, fontSize:20 }}>⚙️ Settings</h2>
+              <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer" }}>×</button>
+            </div>
+
+            <div style={{ display:"flex", borderBottom:`1px solid ${C.border}` }}>
+              <button onClick={()=>setTab("profile")} style={tabStyle("profile")}>Profile</button>
+              <button onClick={()=>setTab("language")} style={tabStyle("language")}>Language</button>
+            </div>
+
+            <div style={{ flex:1, overflowY:"auto", padding:28 }}>
+              {tab === "profile" && (
+                <>
+                  <div style={{ display:"flex", justifyContent:"center", marginBottom:24 }}>
+                    <div style={{ width:80, height:80, background: usePhoto && profileImg ? "transparent" : selectedColor, border:`2px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden" }}>
+                      {usePhoto && profileImg
+                        ? <img src={profileImg} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                        : <span style={{ color:"white", fontWeight:900, fontSize:32 }}>{(nickname||"?")[0].toUpperCase()}</span>
+                      }
+                    </div>
+                  </div>
+
+                  <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:6 }}>Nickname</label>
+                  <input value={nickname} onChange={e=>setNickname(e.target.value)} style={{ width:"100%", padding:"12px 14px", border:`1px solid ${C.border}`, background:C.white, boxSizing:"border-box", outline:"none", fontSize:14, marginBottom:20 }} />
+
+                  <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+                    <button onClick={()=>setUsePhoto(false)} style={{ flex:1, padding:10, fontWeight:700, border:`1px solid ${C.text}`, background:!usePhoto?C.text:"transparent", color:!usePhoto?C.white:C.text, cursor:"pointer", fontSize:13 }}>Color</button>
+                    <button onClick={()=>setUsePhoto(true)} style={{ flex:1, padding:10, fontWeight:700, border:`1px solid ${C.text}`, background:usePhoto?C.text:"transparent", color:usePhoto?C.white:C.text, cursor:"pointer", fontSize:13 }}>Photo</button>
+                  </div>
+
+                  {!usePhoto ? (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:8 }}>
+                      {PROFILE_COLORS.map(col => (
+                        <div key={col} onClick={()=>setSelectedColor(col)} style={{ width:36, height:36, background:col, cursor:"pointer", border: selectedColor===col ? `3px solid ${C.text}` : `2px solid transparent`, boxSizing:"border-box" }} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom:8 }}>
+                      <input type="file" accept="image/*" onChange={handleImageUpload} style={{ fontSize:13 }} />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {tab === "language" && (
+                <>
+                  <p style={{ fontWeight:700, fontSize:13, marginBottom:16 }}>Display Language <span style={{ color:C.textMuted, fontWeight:400 }}>(Default: English)</span></p>
+                  <div style={{ display:"grid", gap:8 }}>
+                    {LANGUAGES.map(lang => (
+                      <div key={lang.code} onClick={()=>setLanguage(lang.code)} style={{ padding:"14px 16px", border:`1px solid ${language===lang.code?C.text:C.border}`, cursor:"pointer", background: language===lang.code?C.accentLight:"transparent", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <span style={{ fontWeight:700, fontSize:14 }}>{lang.label}</span>
+                        <span style={{ fontSize:12, color:C.textMuted }}>{lang.native}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div style={{ padding:"16px 28px", borderTop:`1px solid ${C.border}` }}>
+              <button onClick={handleSave} style={{ background:C.text, border:"none", color:C.white, padding:"12px", fontSize:14, fontWeight:700, width:"100%", cursor:"pointer" }}>
+                {saved ? "✓ Saved!" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ PRIVACY POLICY MODAL (Feature 4) ══════════════ */
+    function PrivacyPolicyModal({ onClose }) {
+      const [loading, setLoading] = useState(true);
+      const [content, setContent] = useState("");
+
+      useEffect(() => {
+        // Simulated privacy policy content based on international laws (GDPR, CCPA, PIPEDA, PDPA)
+        setContent(`PRIVACY POLICY & TERMS OF SERVICE
+
+Governing Laws: GDPR (EU) · CCPA (California) · PIPEDA (Canada) · PDPA (Thailand/Singapore) · LGPD (Brazil)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. DATA COLLECTION (GDPR Art. 13 / CCPA §1798.100)
+
+We collect the following personal data:
+• Full name or username
+• Email address (verified)
+• Phone number (technicians only)
+• Professional license documentation (technicians only)
+• Location data (latitude/longitude for map placement)
+• Usage data (searches, interactions)
+
+Legal basis for processing (GDPR Art. 6):
+- Contract performance (providing the WRC service)
+- Legitimate interest (fraud prevention, security)
+- Consent (marketing communications, optional)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. YOUR RIGHTS (GDPR Chapter III / CCPA §1798.120)
+
+You have the right to:
+• Access your personal data (Art. 15 GDPR)
+• Rectify inaccurate data (Art. 16 GDPR)
+• Erase your data ("Right to be Forgotten") (Art. 17 GDPR)
+• Data portability (Art. 20 GDPR)
+• Object to processing (Art. 21 GDPR)
+• Opt-out of sale of personal information (CCPA)
+• Lodge a complaint with a supervisory authority
+
+To exercise these rights, contact: privacy@wrc.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. DATA RETENTION (GDPR Art. 5(1)(e))
+
+• Account data: retained for the duration of account + 30 days
+• Financial transaction data: 7 years (legal obligation)
+• Review data: retained indefinitely (legitimate interest)
+• License documents: deleted upon account termination
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. THIRD-PARTY SHARING (GDPR Art. 28 / CCPA §1798.115)
+
+We do NOT sell personal data. We may share data with:
+• Payment processors (PCI-DSS compliant)
+• Email service providers (verification only)
+• OpenStreetMap (anonymous map tile requests)
+
+All third-party processors are bound by Data Processing Agreements.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. SECURITY (GDPR Art. 32 / NIST Cybersecurity Framework)
+
+• All data encrypted at rest (AES-256)
+• TLS 1.3 for data in transit
+• Regular security audits
+• Breach notification within 72 hours (GDPR Art. 33)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6. COOKIES & TRACKING (ePrivacy Directive / CCPA)
+
+We use:
+• Strictly necessary cookies (session management)
+• No advertising or tracking cookies without explicit consent
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7. INTERNATIONAL TRANSFERS (GDPR Chapter V)
+
+Data may be transferred internationally under Standard Contractual Clauses (SCCs) approved by the European Commission.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+8. TERMS OF SERVICE
+
+By using WRC, you agree to:
+• Provide accurate information only
+• Not misuse the platform for fraudulent purposes
+• Professional license submissions that are genuine
+• Comply with all applicable local laws
+
+Violations may result in permanent account termination and legal action.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Last updated: May 2025
+Controller: WRC International Ltd.
+Contact: legal@wrc.com`);
+        setLoading(false);
+      }, []);
+
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100000 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, width:"min(700px,95vw)", maxHeight:"85vh", display:"flex", flexDirection:"column" }}>
+            <div style={{ padding:"20px 28px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+              <div>
+                <h2 style={{ margin:0, fontWeight:900, fontSize:18 }}>Privacy Policy & Terms of Service</h2>
+                <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>International Legal Framework (GDPR · CCPA · PIPEDA · PDPA · LGPD)</div>
+              </div>
+              <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer" }}>×</button>
+            </div>
+            <div style={{ flex:1, overflowY:"auto", padding:"24px 28px" }}>
+              {loading ? (
+                <div style={{ textAlign:"center", padding:40, color:C.textMuted }}>Loading...</div>
+              ) : (
+                <pre style={{ margin:0, fontSize:12, lineHeight:1.8, color:C.textMid, fontFamily:"'Inter', monospace", whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{content}</pre>
+              )}
+            </div>
+            <div style={{ padding:"16px 28px", borderTop:`1px solid ${C.border}` }}>
+              <button onClick={onClose} style={{ background:C.text, border:"none", color:C.white, padding:"12px 32px", cursor:"pointer", fontSize:13, fontWeight:700 }}>I have read this — Close</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ PAYMENT MODAL v2 (Feature 8 - Steam-like, $19) ══════════════ */
+    function PaymentModal({ onSuccess, onClose, flagData }) {
+      const [step, setStep] = useState("method"); // method | details | confirm
+      const [method, setMethod] = useState(null);
+      const [cardNum, setCardNum] = useState("");
+      const [expiry, setExpiry] = useState("");
+      const [cvv, setCvv] = useState("");
+      const [cardName, setCardName] = useState("");
+      const [processing, setProcessing] = useState(false);
+
+      const paymentMethods = [
+        { id:"card", icon:"💳", label:"Credit / Debit Card", sub:"Visa, Mastercard, Amex" },
+        { id:"paypal", icon:"🅿️", label:"PayPal", sub:"Fast checkout" },
+        { id:"google", icon:"G", label:"Google Pay", sub:"Quick & secure" },
+        { id:"apple", icon:"🍎", label:"Apple Pay", sub:"Touch ID / Face ID" },
+        { id:"crypto", icon:"₿", label:"Cryptocurrency", sub:"BTC, ETH, USDT" },
+      ];
+
+      const handlePay = () => {
+        if (method === "card") {
+          if (!cardNum || !expiry || !cvv || !cardName) return alert("Please fill in all card details.");
+          if (cardNum.replace(/\s/g,"").length < 16) return alert("Invalid card number.");
+        }
+        setProcessing(true);
+        setTimeout(() => { setProcessing(false); onSuccess(); }, 1800);
+      };
+
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:60000 }}>
+          <div style={{ background:"#1b2838", border:`2px solid #4c9be8`, width:"min(460px,95vw)", color:"#c6d4df" }}>
+            {/* Steam-like header */}
+            <div style={{ background:"linear-gradient(135deg,#1b2838 0%,#2a475e 100%)", padding:"24px 28px", borderBottom:"1px solid #4c9be8" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div>
+                  <div style={{ fontSize:11, letterSpacing:"0.1em", color:"#4c9be8", fontWeight:700, textTransform:"uppercase" }}>WRC Store</div>
+                  <h2 style={{ margin:"4px 0 0 0", color:"#ffffff", fontWeight:900, fontSize:20 }}>🚩 Flag Deployment</h2>
+                </div>
+                <button onClick={onClose} style={{ background:"transparent", border:"1px solid #4c9be8", color:"#4c9be8", width:32, height:32, cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+              </div>
+            </div>
+
+            <div style={{ padding:"24px 28px" }}>
+              {/* Price display */}
+              <div style={{ background:"rgba(76,155,232,0.1)", border:"1px solid #4c9be8", padding:"16px 20px", marginBottom:24, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div>
+                  <div style={{ fontSize:12, color:"#8f98a0", marginBottom:4 }}>Monthly Visibility Subscription</div>
+                  <div style={{ fontSize:13, color:"#c6d4df" }}>🚩 Map Flag Placement</div>
+                </div>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontSize:28, fontWeight:900, color:"#4c9be8" }}>$19</div>
+                  <div style={{ fontSize:11, color:"#8f98a0" }}>per month</div>
+                </div>
+              </div>
+
+              {step === "method" && (
+                <>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#8f98a0", marginBottom:12, textTransform:"uppercase", letterSpacing:"0.08em" }}>Select Payment Method</div>
+                  <div style={{ display:"grid", gap:8 }}>
+                    {paymentMethods.map(pm => (
+                      <div key={pm.id} onClick={()=>setMethod(pm.id)} style={{ padding:"14px 16px", border:`1px solid ${method===pm.id?"#4c9be8":"#2a3f5f"}`, cursor:"pointer", background: method===pm.id?"rgba(76,155,232,0.15)":"rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:14, transition:"all 0.2s" }}>
+                        <span style={{ fontSize:20, minWidth:28 }}>{pm.icon}</span>
+                        <div>
+                          <div style={{ fontSize:14, fontWeight:700, color:"#ffffff" }}>{pm.label}</div>
+                          <div style={{ fontSize:11, color:"#8f98a0" }}>{pm.sub}</div>
+                        </div>
+                        {method===pm.id && <span style={{ marginLeft:"auto", color:"#4c9be8", fontSize:18 }}>✓</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={()=>{ if(!method) return alert("Select a payment method."); setStep("details"); }} style={{ width:"100%", marginTop:20, padding:"14px", background:"#4c9be8", border:"none", color:"white", fontWeight:700, fontSize:14, cursor:"pointer" }}>Continue →</button>
+                </>
+              )}
+
+              {step === "details" && (
+                <>
+                  {method === "card" ? (
+                    <>
+                      <div style={{ fontSize:12, fontWeight:700, color:"#8f98a0", marginBottom:12, textTransform:"uppercase", letterSpacing:"0.08em" }}>Card Details</div>
+                      <div style={{ display:"grid", gap:10 }}>
+                        <input value={cardName} onChange={e=>setCardName(e.target.value)} placeholder="Name on Card" style={{ padding:"12px 14px", background:"#2a3f5f", border:"1px solid #4c6a8a", color:"white", fontSize:14, outline:"none" }} />
+                        <input value={cardNum} onChange={e=>setCardNum(e.target.value.replace(/\D/g,"").replace(/(.{4})/g,"$1 ").trim())} placeholder="Card Number" maxLength={19} style={{ padding:"12px 14px", background:"#2a3f5f", border:"1px solid #4c6a8a", color:"white", fontSize:14, outline:"none", letterSpacing:"0.1em" }} />
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                          <input value={expiry} onChange={e=>{let v=e.target.value.replace(/\D/g,"");if(v.length>=2)v=v.slice(0,2)+"/"+v.slice(2,4);setExpiry(v);}} placeholder="MM/YY" maxLength={5} style={{ padding:"12px 14px", background:"#2a3f5f", border:"1px solid #4c6a8a", color:"white", fontSize:14, outline:"none" }} />
+                          <input value={cvv} onChange={e=>setCvv(e.target.value.replace(/\D/g,""))} placeholder="CVV" maxLength={4} style={{ padding:"12px 14px", background:"#2a3f5f", border:"1px solid #4c6a8a", color:"white", fontSize:14, outline:"none" }} />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ textAlign:"center", padding:"24px 0", color:"#8f98a0" }}>
+                      <div style={{ fontSize:48, marginBottom:12 }}>{paymentMethods.find(m=>m.id===method)?.icon}</div>
+                      <div style={{ fontSize:15, color:"#c6d4df" }}>You will be redirected to complete payment via</div>
+                      <div style={{ fontSize:17, fontWeight:700, color:"#ffffff", marginTop:6 }}>{paymentMethods.find(m=>m.id===method)?.label}</div>
+                    </div>
+                  )}
+                  <div style={{ display:"flex", gap:10, marginTop:20 }}>
+                    <button onClick={()=>setStep("method")} style={{ flex:1, padding:"12px", background:"transparent", border:"1px solid #4c6a8a", color:"#8f98a0", cursor:"pointer", fontWeight:600, fontSize:13 }}>← Back</button>
+                    <button onClick={handlePay} disabled={processing} style={{ flex:2, padding:"12px", background:processing?"#2a3f5f":"#4c9be8", border:"none", color:"white", fontWeight:700, fontSize:14, cursor:processing?"default":"pointer" }}>
+                      {processing ? "Processing..." : `Pay $19.00 / month`}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <div style={{ marginTop:16, fontSize:11, color:"#4a5f73", textAlign:"center" }}>🔒 Secured by WRC Payment Gateway · Cancel anytime</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ FLAG COLOR PICKER MODAL ══════════════ */
+    const FLAG_COLORS = [
+      { color:"#1a5cff", label:"Blue" },
+      { color:"#d32f2f", label:"Red" },
+      { color:"#1a7a3a", label:"Green" },
+      { color:"#ffffff", label:"White", border:true },
+    ];
+    function FlagColorPickModal({ onPick, onClose }) {
+      const [sel, setSel] = useState("#ffffff");
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:65500 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, padding:36, width:380 }}>
+            <h2 style={{ marginTop:0, fontWeight:900, fontSize:20, marginBottom:6 }}>Choose Flag Color</h2>
+            <p style={{ color:C.textMid, fontSize:13, marginBottom:20 }}>Select a color for your flag on the map.</p>
+            <div style={{ display:"flex", gap:16, marginBottom:28, justifyContent:"center" }}>
+              {FLAG_COLORS.map(fc => (
+                <div key={fc.color} onClick={()=>setSel(fc.color)} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, cursor:"pointer" }}>
+                  <div style={{ width:52, height:52, background:fc.color, border: sel===fc.color ? `3px solid ${C.text}` : fc.border ? "2px solid #ccc" : "2px solid transparent", boxSizing:"border-box", boxShadow: sel===fc.color ? "0 0 0 2px #1a1a1a" : "none" }} />
+                  <span style={{ fontSize:12, fontWeight:700, color: sel===fc.color ? C.text : C.textMuted }}>{fc.label}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={()=>onPick(sel)} style={{ flex:2, padding:"12px", background:C.text, border:"none", color:C.white, fontWeight:700, cursor:"pointer", fontSize:14 }}>Next — Add Photos →</button>
+              <button onClick={onClose} style={{ flex:1, padding:"12px", background:"transparent", border:`1px solid ${C.border}`, cursor:"pointer", fontWeight:600, fontSize:13 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ FLAG CONFIRM MODAL ══════════════ */
+    function FlagConfirmModal({ coord, flagsOwned, onConfirm, onCancel }) {
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:65200 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, padding:32, width:360, textAlign:"center" }}>
+            <div style={{ fontSize:48, marginBottom:12 }}>🚩</div>
+            <h2 style={{ marginTop:0, fontWeight:900, fontSize:19, marginBottom:8 }}>Plant Flag Here?</h2>
+            <p style={{ color:C.textMid, fontSize:13, marginBottom:6 }}>
+              LAT: {coord.lat.toFixed(4)} / LNG: {coord.lng.toFixed(4)}
+            </p>
+            <p style={{ color:C.textMuted, fontSize:12, marginBottom:24 }}>
+              You have <strong>{flagsOwned}</strong> flag(s) remaining. Placing this flag will use 1.
+            </p>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={onConfirm} style={{ flex:2, padding:"12px", background:C.text, border:"none", color:C.white, fontWeight:700, cursor:"pointer", fontSize:14 }}>Yes, Place Flag</button>
+              <button onClick={onCancel} style={{ flex:1, padding:"12px", background:"transparent", border:`1px solid ${C.border}`, cursor:"pointer", fontWeight:600, fontSize:13 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ FLAG SETUP MODAL (Feature 8) ══════════════ */
+    function FlagSetupModal({ tech, onSave, onClose, flagColor }) {
+      const [images, setImages] = useState([]);
+      const [desc, setDesc] = useState("");
+
+      const handleFiles = (e) => {
+        Array.from(e.target.files).forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (ev) => setImages(prev => [...prev, ev.target.result]);
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const handleSave = () => {
+        if (images.length === 0) return alert("Please upload at least 1 photo.");
+        onSave(images, flagColor, desc);
+      };
+
+      const fc = flagColor || "#ffffff";
+
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:65000 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, padding:36, width:420 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:6 }}>
+              <div style={{ width:28, height:28, background:fc, border:"2px solid #ccc" }} />
+              <h2 style={{ margin:0, fontWeight:900, fontSize:20 }}>Set Up Your Flag</h2>
+            </div>
+            <p style={{ color:C.textMid, fontSize:13, marginBottom:18 }}>Upload 1 or more photos and add a description.</p>
+
+            <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:6 }}>Photos (min 1)</label>
+            <input type="file" accept="image/*" multiple onChange={handleFiles} style={{ marginBottom:12, fontSize:13 }} />
+
+            {images.length > 0 && (
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:14 }}>
+                {images.map((img, i) => (
+                  <img key={i} src={img} style={{ width:64, height:64, objectFit:"cover", border:`1px solid ${C.border}` }} />
+                ))}
+                <div style={{ fontSize:12, color:C.textMuted, alignSelf:"center" }}>{images.length} photo(s)</div>
+              </div>
+            )}
+
+            <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:6 }}>Description</label>
+            <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Describe your business, services, hours..." style={{ ...inputStyle, height:72, resize:"none", marginBottom:18 }} />
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={handleSave} style={{ flex:2, padding:"12px", background:C.text, border:"none", color:C.white, fontWeight:700, cursor:"pointer" }}>Deploy Flag 🚩</button>
+              <button onClick={onClose} style={{ flex:1, padding:"12px", background:"transparent", border:`1px solid ${C.border}`, cursor:"pointer", fontWeight:600, fontSize:13 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ TECHNICIAN SNS (Feature 7) ══════════════ */
+    function TechSNSPanel({ tech, user, onClose, onUpdate }) {
+      const [bio, setBio] = useState(tech.bio || "");
+      const [posts, setPosts] = useState(tech.posts || []);
+      const [newPost, setNewPost] = useState("");
+      const [newPostImg, setNewPostImg] = useState(null);
+      const [editingBio, setEditingBio] = useState(false);
+      const isOwner = user && user.techId === tech.id;
+
+      const handleSaveBio = async () => {
+        const updated = await API.updateTech(tech.id, { bio });
+        onUpdate(updated);
+        setEditingBio(false);
+      };
+
+      const handleAddPost = async () => {
+        if (!newPost.trim() && !newPostImg) return;
+        const updated = await API.addPost(tech.id, { text: newPost, img: newPostImg, author: user.nickname || user.name });
+        setPosts(updated.posts || []);
+        setNewPost("");
+        setNewPostImg(null);
+        onUpdate(updated);
+      };
+
+      const handlePostImg = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => setNewPostImg(ev.target.result);
+        reader.readAsDataURL(file);
+      };
+
+      return (
+        <div style={{ display:"flex", flexDirection:"column", height:"100%" }}>
+          <div style={{ padding:"16px 20px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+            <strong style={{ fontSize:16, fontWeight:800 }}>SNS Profile — {tech.name}</strong>
+            <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer" }}>×</button>
+          </div>
+          <div style={{ flex:1, overflowY:"auto", padding:20 }}>
+            {/* Bio section */}
+            <div style={{ marginBottom:24, border:`1px solid ${C.border}`, padding:16 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <strong style={{ fontSize:13, fontWeight:800 }}>About Me</strong>
+                {isOwner && !editingBio && <button onClick={()=>setEditingBio(true)} style={{ fontSize:12, background:"transparent", border:`1px solid ${C.border}`, padding:"4px 10px", cursor:"pointer" }}>Edit</button>}
+              </div>
+              {editingBio ? (
+                <>
+                  <textarea value={bio} onChange={e=>setBio(e.target.value)} placeholder="Introduce yourself, your specialties, experience..." style={{ width:"100%", padding:"10px 12px", border:`1px solid ${C.border}`, fontSize:13, height:100, resize:"vertical", boxSizing:"border-box", outline:"none", marginBottom:8 }} />
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={handleSaveBio} style={{ padding:"8px 20px", background:C.text, border:"none", color:C.white, cursor:"pointer", fontWeight:700, fontSize:13 }}>Save</button>
+                    <button onClick={()=>setEditingBio(false)} style={{ padding:"8px 16px", background:"transparent", border:`1px solid ${C.border}`, cursor:"pointer", fontSize:13 }}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <p style={{ margin:0, fontSize:13, color:C.textMid, lineHeight:1.6 }}>{bio || (isOwner ? "Click Edit to add your introduction..." : "No bio yet.")}</p>
+              )}
+            </div>
+
+            {/* Post composer (owner only) */}
+            {isOwner && (
+              <div style={{ marginBottom:24, border:`1px solid ${C.text}`, padding:16 }}>
+                <strong style={{ fontSize:13, fontWeight:800, display:"block", marginBottom:10 }}>New Post</strong>
+                <textarea value={newPost} onChange={e=>setNewPost(e.target.value)} placeholder="Share an update, project, or anything with your customers..." style={{ width:"100%", padding:"10px 12px", border:`1px solid ${C.border}`, fontSize:13, height:80, resize:"vertical", boxSizing:"border-box", outline:"none", marginBottom:10 }} />
+                <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                  <input type="file" accept="image/*" onChange={handlePostImg} style={{ fontSize:12, flex:1 }} />
+                  {newPostImg && <img src={newPostImg} style={{ width:40, height:40, objectFit:"cover", border:`1px solid ${C.border}` }} />}
+                  <button onClick={handleAddPost} style={{ padding:"8px 20px", background:C.text, border:"none", color:C.white, cursor:"pointer", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>Post 📤</button>
+                </div>
+              </div>
+            )}
+
+            {/* Posts feed */}
+            <div>
+              <strong style={{ fontSize:13, fontWeight:800, display:"block", marginBottom:12 }}>Posts ({posts.length})</strong>
+              {posts.length === 0 ? (
+                <div style={{ color:C.textMuted, fontSize:13, textAlign:"center", padding:"20px 0" }}>No posts yet.</div>
+              ) : (
+                [...posts].reverse().map(p => (
+                  <div key={p.id} style={{ border:`1px solid ${C.border}`, padding:14, marginBottom:12 }}>
+                    <div style={{ fontSize:11, color:C.textMuted, marginBottom:8, display:"flex", justifyContent:"space-between" }}>
+                      <span>@{p.author}</span>
+                      <span>{new Date(p.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    {p.img && <img src={p.img} style={{ width:"100%", maxHeight:200, objectFit:"cover", marginBottom:8, border:`1px solid ${C.border}` }} />}
+                    {p.text && <p style={{ margin:0, fontSize:13, lineHeight:1.6, color:C.textMid }}>{p.text}</p>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ GLOBAL LEAFLET MAP ══════════════ */
+    function LeafletMap({ technicians, onTechClick, focusCoord, user, onRightClick, flagsOwned, flagsDeployed, onFlagHudClick }) {
+      const mapRef = useRef(null);
+      const mapInstanceRef = useRef(null);
+      const markersRef = useRef([]);
+      const [coords, setCoords] = useState({ lat: "0.0000", lng: "0.0000" });
+
+      useEffect(() => {
+        if (!mapRef.current || mapInstanceRef.current) return;
+        const L = window.L;
+        const map = L.map(mapRef.current, { center: [20, 0], zoom: 2, minZoom: 2, zoomControl: true });
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: '© OpenStreetMap', maxZoom: 19,
+        }).addTo(map);
+
+        setTimeout(() => { map.invalidateSize(); }, 300);
+        map.on("mousemove", e => setCoords({ lat: e.latlng.lat.toFixed(4), lng: e.latlng.lng.toFixed(4) }));
+        
+        // Right-click handler for flag placement
+        map.on("contextmenu", e => {
+          if (onRightClick) onRightClick({ lat: e.latlng.lat, lng: e.latlng.lng });
+        });
+
+        mapInstanceRef.current = map;
+        return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
+      }, []);
+
+      useEffect(() => {
+        if (!mapInstanceRef.current || !window.L) return;
+        const L = window.L;
+        const map = mapInstanceRef.current;
+        markersRef.current.forEach(m => map.removeLayer(m));
+        markersRef.current = [];
+
+        technicians.forEach(tech => {
+          // Render each individual flag if tech has flags array
+          const flagList = (tech.flags && tech.flags.length > 0) ? tech.flags : [{ lat: tech.lat, lng: tech.lng, color: tech.flagColor || (TECH_CATEGORIES[tech.specialty] || C.accent) }];
+          flagList.forEach((flag, fi) => {
+            if (!flag.lat && !tech.lat) return;
+            const lat = flag.lat || tech.lat;
+            const lng = flag.lng || tech.lng;
+            const color = flag.color || TECH_CATEGORIES[tech.specialty] || C.accent;
+            const textColor = color === "#ffffff" ? "#1a1a1a" : "white";
+            const borderCol = color === "#ffffff" ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.2)";
+            const el = document.createElement("div");
+            el.innerHTML = '<div style="position:relative;cursor:pointer"><div style="background:'+color+';color:'+textColor+';padding:4px 8px;font-family:sans-serif;font-size:11px;font-weight:600;white-space:nowrap;border:1px solid '+borderCol+';">&#x1F6A9; '+(fi===0?tech.name:tech.name+' #'+(fi+1))+'</div><div style="width:0;height:0;border-left:6px solid transparent;border-right:0;border-top:8px solid '+color+';margin-left:2px;"></div></div>';
+            const icon = L.divIcon({ html: el.innerHTML, className: "", iconAnchor: [0, 30] });
+            const marker = L.marker([lat, lng], { icon }).addTo(map).on("click", () => onTechClick(tech));
+            markersRef.current.push(marker);
+          });
+        });
+      }, [technicians, onTechClick]);
+
+      useEffect(() => {
+        if (!mapInstanceRef.current || !focusCoord) return;
+        mapInstanceRef.current.setView([focusCoord.lat, focusCoord.lng], 14, { animate: true });
+      }, [focusCoord]);
+
+      return (
+        <div style={{ width:"100%", height:"100%", position:"relative" }}>
+          <div ref={mapRef} style={{ width:"100%", height:"100%" }} />
+          <div style={{ position:"absolute", bottom:20, left:10, zIndex:1000, background:"rgba(255,255,255,0.9)", border:`1px solid ${C.border}`, padding:"4px 8px", fontSize:11, color:C.textMid, pointerEvents:"none" }}>
+            LAT: {coords.lat} | LNG: {coords.lng}
+          </div>
+          {/* Right-click hint for technicians */}
+          {user && user.userType === "technician" && (
+            <div style={{ position:"absolute", bottom:56, right:10, zIndex:1000, background:"rgba(26,26,26,0.85)", color:"white", padding:"6px 12px", fontSize:11, fontWeight:600, pointerEvents:"none" }}>
+              Right-click to place your flag
+            </div>
+          )}
+          {/* FLAG HUD — always visible, bottom-right */}
+          {onFlagHudClick && (
+            <div style={{ position:"absolute", bottom:20, right:10, zIndex:1001, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4 }}>
+              <div onClick={onFlagHudClick} style={{ background:"rgba(255,255,255,0.95)", border:"2px solid #1a1a1a", padding:"8px 14px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, boxShadow:"0 2px 8px rgba(0,0,0,0.2)" }}>
+                <span style={{ fontSize:20 }}>🏳️</span>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:"#1a1a1a" }}>Flags Owned: {flagsOwned}</div>
+                  <div style={{ fontSize:11, color:"#888" }}>Deployed: {flagsDeployed}</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ══════════════ MAIN APP ══════════════ */
+    function WRCApp() {
+      const [showIntro, setShowIntro] = useState(true);
+      const [ready, setReady] = useState(false);
+      const [page, setPage] = useState("map");
+      const [user, setUser] = useState(null);
+      const [modal, setModal] = useState(null); // login | signup | payment | privacy | settings | flagSetup | profileSetup
+      const [technicians, setTechnicians] = useState([]);
+      const [selectedTech, setSelectedTech] = useState(null);
+      const [techReviews, setTechReviews] = useState([]);
+      const [focusCoord, setFocusCoord] = useState(null);
+      const [searchQ, setSearchQ] = useState("");
+      const [searchRes, setSearchRes] = useState([]);
+      const [showDrop, setShowDrop] = useState(false);
+      const [notif, setNotif] = useState(null);
+      const [searchLoading, setSearchLoading] = useState(false);
+      const [selectedCategory, setSelectedCategory] = useState("All");
+      const [showSettings, setShowSettings] = useState(false);
+      const [pendingFlagCoord, setPendingFlagCoord] = useState(null);
+      const [showSNS, setShowSNS] = useState(false);
+      const [showPrivacy, setShowPrivacy] = useState(false);
+      const [profileSetupPending, setProfileSetupPending] = useState(false);
+      const [pendingUser, setPendingUser] = useState(null);
+
+      useEffect(() => { seedData(); loadTechs(); setReady(true); }, []);
+
+      const loadTechs = async () => { const all = await API.getAllTechs(); setTechnicians(all); };
+      const notify = (msg, type="success") => { setNotif({ msg, type }); setTimeout(() => setNotif(null), 4000); };
+      const handleTechClick = async (tech) => { setSelectedTech(tech); setShowSNS(false); const revs = await API.getReviews(tech.id); setTechReviews(revs); };
+
+      // Detect script/language of query to request localized results
+      const detectLang = (q) => {
+        if (!q) return "en";
+        const hasKorean = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/.test(q);
+        if (hasKorean) return "ko";
+        const hasChinese = /[\u4E00-\u9FFF\u3400-\u4DBF]/.test(q);
+        if (hasChinese) return "zh";
+        const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF]/.test(q);
+        if (hasJapanese) return "ja";
+        const hasArabic = /[\u0600-\u06FF]/.test(q);
+        if (hasArabic) return "ar";
+        const hasRussian = /[\u0400-\u04FF]/.test(q);
+        if (hasRussian) return "ru";
+        const hasThai = /[\u0E00-\u0E7F]/.test(q);
+        if (hasThai) return "th";
+        const hasHindi = /[\u0900-\u097F]/.test(q);
+        if (hasHindi) return "hi";
+        const hasGreek = /[\u0370-\u03FF]/.test(q);
+        if (hasGreek) return "el";
+        const hasHebrew = /[\u0590-\u05FF]/.test(q);
+        if (hasHebrew) return "he";
+        const hasVietnamese = /[\u1EA0-\u1EF9àáâãèéêìíòóôõùúýăđơưạảấầẩẫậắặẻẽếềệỉịọỏốồổỗộớờởỡợụủứừửữựỳỷỹ]/.test(q);
+        if (hasVietnamese) return "vi";
+        const hasTurkish = /[ğşıİÇÖÜüöç]/.test(q);
+        if (hasTurkish) return "tr";
+        const hasGerman = /[äöüÄÖÜß]/.test(q);
+        if (hasGerman) return "de";
+        const hasSpanish = /[áéíóúüñ¿¡]/.test(q);
+        if (hasSpanish) return "es";
+        const hasFrench = /[àâæçéèêëîïôœùûüÿ]/.test(q);
+        if (hasFrench) return "fr";
+        return "en";
+      };
+
+      const executeSearch = async (query) => {
+        if (!query.trim()) return;
+        setSearchLoading(true);
+        try {
+          const lang = detectLang(query);
+          const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&accept-language=${lang}&namedetails=1`;
+          const response = await fetch(url, { headers: { "Accept-Language": lang } });
+          const data = await response.json();
+          if (data && data.length > 0) {
+            setSearchRes(data.map(item => {
+              // Use localized name if available
+              let displayName = item.display_name;
+              if (item.namedetails) {
+                const localKey = `name:${lang}`;
+                if (item.namedetails[localKey]) {
+                  // Build localized display: local name + country
+                  const parts = item.display_name.split(", ");
+                  const country = parts[parts.length - 1];
+                  displayName = item.namedetails[localKey] + (country && country !== item.namedetails[localKey] ? ", " + country : "");
+                } else if (item.namedetails["name"] && lang !== "en") {
+                  displayName = item.namedetails["name"] + ", " + item.display_name.split(", ").slice(-2).join(", ");
+                }
+              }
+              return { id: item.place_id, name: displayName, lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
+            }));
+            setShowDrop(true);
+          } else {
+            notify("No locations found. Try being more specific.", "error");
+          }
+        } catch (err) {
+          notify("Search engine connection error.", "error");
+        } finally {
+          setSearchLoading(false);
+        }
+      };
+
+      const handleSelectLocation = (loc) => {
+        setFocusCoord({ lat: loc.lat, lng: loc.lng });
+        setSearchQ(loc.name);
+        setSearchRes([]);
+        setShowDrop(false);
+      };
+
+      /* Auth flow */
+      const handleAuthSubmit = async (data) => {
+        try {
+          let u;
+          if (modal === "login") {
+            u = await API.loginUser(data.email, data.password);
+            setUser(u); setModal(null); notify(`Welcome back, ${u.nickname || u.name}!`);
+          } else if (modal === "signup") {
+            u = await API.registerUser({ email: data.email, password: data.password, name: data.name, userType: data.userType });
+            if (data.userType === "technician") {
+              const t = await API.registerTech({
+                name: data.name, email: data.email, phone: data.phone, specialty: data.specialty,
+                lat: focusCoord ? focusCoord.lat : (20 + Math.random() * 10),
+                lng: focusCoord ? focusCoord.lng : (Math.random() * 20),
+                userId: u.id,
+              });
+              u.techId = t.id;
+              // update user with techId
+              await API.updateUser(u.id, { techId: t.id });
+              u = { ...u, techId: t.id };
+            }
+            // Trigger profile setup
+            setPendingUser(u);
+            setModal(null);
+            setProfileSetupPending(true);
+          }
+        } catch(err) {
+          notify(err.message, "error");
+        }
+      };
+
+      const handleProfileSetupComplete = (updatedUser) => {
+        setUser(updatedUser);
+        setProfileSetupPending(false);
+        setPendingUser(null);
+        notify(`Welcome, ${updatedUser.nickname || updatedUser.name}! 🎉`);
+      };
+
+      /* Right-click handler for map */
+      const handleMapRightClick = (coord) => {
+        if (!user || user.userType !== "technician") return;
+        setPendingFlagCoord(coord);
+        setFocusCoord(coord);
+        const freshUser = DB.get("users").find(u => u.id === user.id);
+        const owned = freshUser ? (freshUser.flagsOwned || 0) : 0;
+        if (owned <= 0) {
+          // No flags owned — go buy
+          setModal("payment");
+        } else {
+          // Has flags — show color picker then confirmation
+          setModal("flagColorPick");
+        }
+      };
+
+      const handlePaymentSuccess = async (qty) => {
+        const amount = qty || 1;
+        if (user?.techId) {
+          await API.subscribe(user.techId);
+        }
+        // Add flags to user account
+        const allU = DB.get("users");
+        const ui = allU.findIndex(u => u.id === user.id);
+        if (ui >= 0) {
+          allU[ui].flagsOwned = (allU[ui].flagsOwned || 0) + amount;
+          DB.set("users", allU);
+          setUser(prev => ({ ...prev, flagsOwned: (prev.flagsOwned || 0) + amount }));
+        }
+        await loadTechs();
+        notify(`Payment successful! ${amount} flag(s) added. Right-click map to deploy.`);
+        setModal(null);
+      };
+
+      const handleFlagSave = async (images, color, description) => {
+        if (!user?.techId || !pendingFlagCoord) { setModal(null); return; }
+        // Build new flag object
+        const newFlag = { id:`flag-${Date.now()}`, lat: pendingFlagCoord.lat, lng: pendingFlagCoord.lng, color: color || "#ffffff", images, description: description || "", createdAt: Date.now() };
+        const allT = DB.get("technicians");
+        const t = allT.find(x => x.id === user.techId);
+        if (t) {
+          if (!t.flags) t.flags = [];
+          t.flags.push(newFlag);
+          t.lat = pendingFlagCoord.lat; t.lng = pendingFlagCoord.lng;
+          t.flagImages = images; t.flagColor = color;
+          t.flagsDeployed = (t.flagsDeployed || 0) + 1;
+          DB.set("technicians", allT);
+        }
+        // Decrease user's flagsOwned
+        const freshUser = DB.get("users").find(u => u.id === user.id);
+        if (freshUser) {
+          freshUser.flagsOwned = Math.max(0, (freshUser.flagsOwned || 0) - 1);
+          freshUser.flagsDeployed = (freshUser.flagsDeployed || 0) + 1;
+          const allU = DB.get("users");
+          const ui = allU.findIndex(u => u.id === user.id);
+          if (ui >= 0) { allU[ui] = freshUser; DB.set("users", allU); }
+          setUser(prev => ({ ...prev, flagsOwned: freshUser.flagsOwned, flagsDeployed: freshUser.flagsDeployed }));
+        }
+        await loadTechs();
+        notify("Flag deployed on map! 🚩");
+        setModal(null);
+        setPendingFlagCoord(null);
+        setSelectedFlagColor("#ffffff");
+      };
+
+      const [selectedFlagColor, setSelectedFlagColor] = useState("#ffffff");
+
+      if (!ready) return <div style={{ padding: 40, textAlign:"center" }}>Booting WRC System...</div>;
+
+      const filteredTechs = selectedCategory === "All" ? technicians : technicians.filter(t => t.specialty === selectedCategory);
+      const myTech = user?.techId ? DB.get("technicians").find(t=>t.id===user?.techId) : null;
+
+      /* Profile avatar component */
+      const ProfileAvatar = ({ u, size=32 }) => (
+        <div style={{ width:size, height:size, background: u.profileImg ? "transparent" : (u.profileColor || C.text), border:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", flexShrink:0 }}>
+          {u.profileImg
+            ? <img src={u.profileImg} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+            : <span style={{ color:"white", fontWeight:900, fontSize:size*0.45 }}>{((u.nickname||u.name||"?")[0]).toUpperCase()}</span>
+          }
+        </div>
+      );
+
+      return (
+        <div style={{ height:"100vh", display:"flex", flexDirection:"column", background:C.bg, color:C.text }}>
+
+          {/* INTRO OVERLAY (Feature 1) */}
+          {showIntro && <IntroOverlay onSkip={()=>setShowIntro(false)} />}
+
+          {/* PROFILE SETUP (Feature 5) */}
+          {profileSetupPending && pendingUser && <ProfileSetupModal user={pendingUser} onComplete={handleProfileSetupComplete} />}
+
+          {/* PRIVACY POLICY MODAL (Feature 4) */}
+          {showPrivacy && <PrivacyPolicyModal onClose={()=>setShowPrivacy(false)} />}
+
+          {/* SETTINGS MODAL (Feature 6) */}
+          {modal === "settings" && user && (
+            <SettingsModal user={user} onClose={()=>setModal(null)} onUpdate={(updated)=>{ setUser(updated); notify("Settings saved."); }} />
+          )}
+
+          {/* PAYMENT MODAL (Feature 8) */}
+          {modal === "payment" && (
+            <PaymentModal onSuccess={handlePaymentSuccess} onClose={()=>setModal(null)} flagData={pendingFlagCoord} />
+          )}
+
+          {/* FLAG COLOR PICKER */}
+          {modal === "flagColorPick" && (
+            <FlagColorPickModal onPick={(color)=>{ setSelectedFlagColor(color); setModal("flagConfirm"); }} onClose={()=>setModal(null)} />
+          )}
+
+          {/* FLAG CONFIRM */}
+          {modal === "flagConfirm" && pendingFlagCoord && (
+            <FlagConfirmModal coord={pendingFlagCoord} flagsOwned={user?.flagsOwned || 0} onConfirm={()=>setModal("flagSetup")} onCancel={()=>setModal(null)} />
+          )}
+
+          {/* FLAG SETUP MODAL (Feature 8) */}
+          {modal === "flagSetup" && (
+            <FlagSetupModal tech={myTech||{}} onSave={handleFlagSave} onClose={()=>setModal(null)} flagColor={selectedFlagColor} />
+          )}
+
+          {notif && (
+            <div style={{ position:"fixed", top:20, right:20, zIndex:9999, background: "#1a1a1a", color: C.white, border: `1px solid ${notif.type==="error" ? C.red : C.green}`, padding:"14px 20px", fontSize:13, fontWeight:600, boxShadow:C.shadow }}>
+              {notif.msg}
+            </div>
+          )}
+
+          {/* HEADER */}
+          <header style={{ background:C.white, borderBottom:`1px solid ${C.border}`, height:64, display:"flex", alignItems:"center", padding:"0 24px", gap:24, flexShrink:0, position:"relative", zIndex:1000 }}>
+            <div style={{ fontWeight:900, fontSize:20, cursor:"pointer" }} onClick={() => setPage("map")}>WRC</div>
+
+            <div style={{ flex:1, maxWidth:500, position:"relative", display:"flex" }}>
+              <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => { if(e.key==='Enter') executeSearch(searchQ); }} placeholder="Search any global town, city, road, or landmark..." style={{...inputStyle, borderRight:"none"}} />
+              <button onClick={() => executeSearch(searchQ)} style={{ background:"transparent", border:`1px solid ${C.border}`, borderLeft:"none", padding:"0 16px", cursor:"pointer", color:C.text }}>
+                {searchLoading ? "..." : "🔍"}
+              </button>
+              {searchRes.length > 0 && showDrop && (
+                <div style={{ position:"absolute", top:"100%", left:0, right:0, background:C.white, border:`1px solid ${C.text}`, zIndex:3000, maxHeight:300, overflowY:"auto" }}>
+                  {searchRes.map(loc => (
+                    <div key={loc.id} onClick={() => handleSelectLocation(loc)} style={{ padding:"12px 14px", cursor:"pointer", borderBottom:`1px solid ${C.border}`, fontSize:13, color:C.textMid, textOverflow:"ellipsis", overflow:"hidden", whiteSpace:"nowrap" }}>
+                      📍 {loc.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <nav style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setPage("map")} style={{...ghostBtn, background: page==="map"?C.accentLight:"transparent"}}>Map</button>
+              <button onClick={() => setPage("rankings")} style={{...ghostBtn, background: page==="rankings"?C.accentLight:"transparent"}}>Rankings</button>
+              <button onClick={() => setPage("dashboard")} style={{...ghostBtn, background: page==="dashboard"?C.accentLight:"transparent"}}>Dashboard</button>
+            </nav>
+
+            <div style={{ marginLeft:"auto" }}>
+              {user ? (
+                <div style={{ display:"flex", alignItems:"center", gap:10, position:"relative" }}>
+                  {/* Profile square (Feature 6) */}
+                  <ProfileAvatar u={user} size={36} />
+                  <span style={{ fontSize:14, fontWeight:700 }}>{user.nickname || user.name}</span>
+                  {/* Settings button (Feature 6) */}
+                  <button onClick={()=>setShowSettings(v=>!v)} style={{ ...ghostBtn, padding:"6px 10px", fontSize:16 }} title="Settings">⚙️</button>
+                  {showSettings && (
+                    <div className="settings-dropdown">
+                      <div className="settings-item" onClick={()=>{ setModal("settings"); setShowSettings(false); }}>⚙️ Settings</div>
+                      <div className="settings-item" onClick={()=>{ setShowSettings(false); setUser(null); notify("Logged out."); setPage("map"); }}>🚪 Log Out</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button onClick={() => setModal("login")} style={accentBtn}>Login / Signup</button>
+              )}
+            </div>
+          </header>
+
+          {page === "map" && (
+            <div className="no-scrollbar" style={{ background: C.surface, borderBottom:`1px solid ${C.border}`, padding:"10px 24px", display:"flex", gap:12, overflowX:"auto", flexShrink:0 }}>
+              <button onClick={()=>setSelectedCategory("All")} style={{...categoryBtn, background: selectedCategory==="All"?C.text:"transparent", color: selectedCategory==="All"?C.white:C.text}}>All Specialized Sectors</button>
+              {Object.keys(TECH_CATEGORIES).map(cat => (
+                <button key={cat} onClick={()=>setSelectedCategory(cat)} style={{ ...categoryBtn, border:`1px solid ${TECH_CATEGORIES[cat]}`, background: selectedCategory===cat ? TECH_CATEGORIES[cat] : "transparent", color: selectedCategory===cat ? C.white : TECH_CATEGORIES[cat] }}>{cat}</button>
+              ))}
+            </div>
+          )}
+
+          <main style={{ flex:1, display:"flex", overflow:"hidden", position:"relative" }}>
+            {page === "map" && (
+              <div style={{ flex:1, display:"flex", width:"100%", height:"100%" }}>
+                <div style={{ flex:1, height:"100%" }}>
+                  <LeafletMap
+                    technicians={filteredTechs}
+                    onTechClick={handleTechClick}
+                    focusCoord={focusCoord}
+                    user={user}
+                    onRightClick={handleMapRightClick}
+                    flagsOwned={user ? (user.flagsOwned || 0) : 0}
+                    flagsDeployed={user ? (user.flagsDeployed || 0) : 0}
+                    onFlagHudClick={user ? ()=>setModal("payment") : null}
+                  />
+                </div>
+                {selectedTech && !showSNS && (
+                  <div style={{ width:380, borderLeft:`1px solid ${C.border}`, background:C.white, height:"100%", display:"flex", flexDirection:"column" }}>
+                    <TechPanel
+                      tech={selectedTech}
+                      reviews={techReviews}
+                      user={user}
+                      onClose={() => setSelectedTech(null)}
+                      onShowSNS={() => setShowSNS(true)}
+                      onReviewSubmit={async (tId, r) => {
+                        await API.addReview(tId, r);
+                        setTechReviews(await API.getReviews(tId));
+                        setSelectedTech(await API.getTechById(tId));
+                        await loadTechs();
+                        notify("Review processed.");
+                      }}
+                      onLoginRequired={() => setModal("login")}
+                    />
+                  </div>
+                )}
+                {selectedTech && showSNS && (
+                  <div style={{ width:380, borderLeft:`1px solid ${C.border}`, background:C.white, height:"100%" }}>
+                    <TechSNSPanel
+                      tech={selectedTech}
+                      user={user}
+                      onClose={() => { setShowSNS(false); setSelectedTech(null); }}
+                      onUpdate={(updated) => setSelectedTech(updated)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {page === "rankings" && <RankingsPage technicians={technicians} />}
+            {page === "dashboard" && (
+              <DashboardPage
+                user={user}
+                technicians={technicians}
+                onLogin={() => setModal("login")}
+                onPayment={() => setModal("payment")}
+              />
+            )}
+          </main>
+          
+          {(modal === "login" || modal === "signup") && (
+            <AuthModal
+              mode={modal}
+              onAuth={handleAuthSubmit}
+              onClose={()=>setModal(null)}
+              onSwitch={setModal}
+              notify={notify}
+              onShowPrivacy={()=>setShowPrivacy(true)}
+            />
+          )}
+        </div>
+      );
+    }
+
+    /* ══════════════ SUB COMPONENTS ══════════════ */
+    function TechPanel({ tech, reviews, user, onClose, onReviewSubmit, onLoginRequired, onShowSNS }) {
+      const [showPhone, setShowPhone] = useState(false);
+      const [writing, setWriting] = useState(false);
+      const [stars, setStars] = useState(5);
+      const [text, setText] = useState("");
+      const avg = reviews.length ? (reviews.reduce((s,r)=>s+r.stars,0)/reviews.length).toFixed(1) : 0;
+      
+      return (
+        <div style={{ display:"flex", flexDirection:"column", height:"100%" }}>
+          <div style={{ padding:24, borderBottom:`1px solid ${C.border}`, background:C.surface, display:"flex", justifyContent:"space-between" }}>
+            <div>
+              <div style={{ fontWeight:800, fontSize:20 }}>{tech.name}</div>
+              <div style={{ color:C.gold, marginTop:10, fontSize:14, fontWeight:700 }}>★ {avg} ({reviews.length} Reviews)</div>
+            </div>
+            <button onClick={onClose} style={{ background:"none", border:"none", fontSize:24, cursor:"pointer", padding:0 }}>×</button>
+          </div>
+
+          {/* Flag photos */}
+          {tech.flagImages && tech.flagImages.length > 0 && (
+            <div style={{ display:"flex", gap:4, padding:"10px 16px", background:C.surface, borderBottom:`1px solid ${C.border}`, overflowX:"auto" }}>
+              {tech.flagImages.map((img, i) => (
+                <img key={i} src={img} style={{ height:60, width:80, objectFit:"cover", border:`1px solid ${C.border}`, flexShrink:0 }} />
+              ))}
+            </div>
+          )}
+
+          <div style={{ flex:1, overflowY:"auto", padding:24 }}>
+            {/* SNS profile button */}
+            <button onClick={onShowSNS} style={{ ...ghostBtn, width:"100%", marginBottom:12, padding:10, fontSize:13 }}>📰 View SNS Profile & Posts</button>
+
+            {!showPhone
+              ? <button onClick={() => { if(!user){onLoginRequired();return;} setShowPhone(true); }} style={{ ...accentBtn, width:"100%", marginBottom:16, padding:14 }}>📞 View Contact</button>
+              : <div style={{ border:`2px solid ${C.text}`, padding:14, textAlign:"center", fontWeight:700, fontSize:18, marginBottom:16 }}>{tech.phone}</div>
+            }
+            {writing ? (
+              <div style={{ background:C.surface, padding:16, border:`1px solid ${C.text}`, marginBottom:24 }}>
+                <select value={stars} onChange={e=>setStars(Number(e.target.value))} style={{ ...inputStyle, marginBottom:12 }}>
+                  <option value="5">★★★★★</option><option value="4">★★★★☆</option><option value="3">★★★☆☆</option>
+                </select>
+                <textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Write review..." style={{ ...inputStyle, height:80, resize:"none", marginBottom:12 }} />
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => { if(!text.trim())return; onReviewSubmit(tech.id,{user:user.name, stars, text}); setWriting(false); setText(""); }} style={{...accentBtn, flex:1}}>Submit</button>
+                  <button onClick={()=>setWriting(false)} style={{...ghostBtn, flex:1}}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={()=>{ if(!user){onLoginRequired();return;} setWriting(true); }} style={{ ...ghostBtn, width:"100%", marginBottom:24, padding:12 }}>✎ Write Review</button>
+            )}
+            {reviews.map(r=>(
+              <div key={r.id} style={{ borderBottom:`1px solid ${C.border}`, paddingBottom:12, marginBottom:12 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><strong>{r.user}</strong><span style={{color:C.gold}}>★{r.stars}</span></div>
+                <div style={{ color:C.textMid, fontSize:14 }}>{r.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function RankingsPage({ technicians }) {
+      const ranked = [...technicians].sort((a,b)=>b.score-a.score);
+      return (
+        <div style={{ padding:40, maxWidth:800, margin:"0 auto", width:"100%", overflowY:"auto" }}>
+          <h2 style={{ fontSize:28, marginBottom:24, fontWeight:900 }}>🏆 Rankings</h2>
+          {ranked.map((t, i) => (
+            <div key={t.id} style={{ display:"flex", alignItems:"center", background:C.white, padding:"20px 24px", marginBottom:12, border:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:24, fontWeight:900, width:60 }}>#{i+1}</div>
+              <div style={{ flex:1 }}><div style={{ fontWeight:700, fontSize:18 }}>{t.name}</div></div>
+              <div style={{ textAlign:"right", fontWeight:900, fontSize:18 }}>{t.score.toLocaleString()} pts</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function DashboardPage({ user, technicians, onLogin, onPayment }) {
+      const [adSlots, setAdSlots] = useState([]);
+      const [showAdForm, setShowAdForm] = useState(false);
+      const [adFile, setAdFile] = useState(null);
+      const [adFilePreview, setAdFilePreview] = useState(null);
+      const [adStart, setAdStart] = useState("");
+      const [adEnd, setAdEnd] = useState("");
+      const [adBooking, setAdBooking] = useState(false);
+      const [adMsg, setAdMsg] = useState("");
+
+      useEffect(()=>{ API.getAdSlots().then(s=>setAdSlots(s)); },[]);
+
+      const handleAdFile = (e) => {
+        const f = e.target.files[0]; if(!f) return;
+        const r = new FileReader();
+        r.onload = (ev) => { setAdFile(ev.target.result); setAdFilePreview(ev.target.result); };
+        r.readAsDataURL(f);
+      };
+
+      const isDateRangeConflict = (start, end) => {
+        const s = new Date(start).getTime(), e = new Date(end).getTime();
+        return adSlots.some(slot => {
+          const ss = new Date(slot.startDate).getTime(), se = new Date(slot.endDate).getTime();
+          return !(e < ss || s > se);
+        });
+      };
+
+      const handleBookAd = async () => {
+        if (!adFile) { setAdMsg("Please upload an ad file."); return; }
+        if (!adStart || !adEnd) { setAdMsg("Please select start and end dates."); return; }
+        if (new Date(adEnd) <= new Date(adStart)) { setAdMsg("End date must be after start date."); return; }
+        if (isDateRangeConflict(adStart, adEnd)) { setAdMsg("This date range is already booked. Please choose different dates."); return; }
+        const days = Math.ceil((new Date(adEnd)-new Date(adStart))/(1000*60*60*24));
+        const total = days * 49;
+        if (!window.confirm(`Book ad from ${adStart} to ${adEnd}?\n${days} day(s) × $49 = $${total}\n\nProceed to payment?`)) return;
+        setAdBooking(true);
+        await new Promise(r=>setTimeout(r,1200));
+        await API.bookAdSlot({ startDate:adStart, endDate:adEnd, file:adFile, bookedBy: user.name, total });
+        const slots = await API.getAdSlots();
+        setAdSlots(slots);
+        setAdBooking(false);
+        setShowAdForm(false);
+        setAdFile(null); setAdFilePreview(null); setAdStart(""); setAdEnd(""); setAdMsg("");
+      };
+
+      const today = new Date().toISOString().split("T")[0];
+
+      if (!user) return <div style={{ padding:60, textAlign:"center", width:"100%" }}><button onClick={onLogin} style={accentBtn}>Login to access</button></div>;
+      const myTech = technicians.find(t => t.id === user.techId);
+
+      return (
+        <div style={{ padding:40, maxWidth:720, margin:"0 auto", width:"100%", overflowY:"auto", height:"100%" }}>
+          <h2 style={{ fontSize:28, marginBottom:24, fontWeight:900 }}>Dashboard</h2>
+
+          {/* My Info */}
+          <div style={{ background:C.white, padding:28, border:`1px solid ${C.border}`, marginBottom:20 }}>
+            <h3 style={{ margin:"0 0 16px 0", fontSize:15, fontWeight:800 }}>My Information</h3>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 20px", fontSize:14 }}>
+              <div><strong>Name:</strong> {user.name}</div>
+              <div><strong>Nickname:</strong> {user.nickname || "—"}</div>
+              <div><strong>Email:</strong> {user.email}</div>
+              <div><strong>Language:</strong> {LANGUAGES.find(l=>l.code===(user.language||"en"))?.label || "English"}</div>
+              <div><strong>Account:</strong> {user.userType}</div>
+              {user.userType === "technician" && <div><strong>Flags Owned:</strong> {user.flagsOwned || 0} | Deployed: {user.flagsDeployed || 0}</div>}
+            </div>
+            {user.userType === "technician" && (
+              <div style={{ marginTop:16, paddingTop:16, borderTop:`1px solid ${C.border}` }}>
+                {myTech?.active
+                  ? <div style={{ color:C.green, fontWeight:700 }}>✓ Flag Active on Map</div>
+                  : <button onClick={onPayment} style={{ ...accentBtn, padding:"12px 24px" }}>💳 Buy Flag ($19/mo)</button>
+                }
+              </div>
+            )}
+          </div>
+
+          {/* ── AD BOARD ── */}
+          <div style={{ background:C.white, border:`1px solid ${C.border}`, marginBottom:20 }}>
+            <div style={{ padding:"18px 24px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <div>
+                <h3 style={{ margin:0, fontSize:15, fontWeight:800 }}>📢 Advertisement Board</h3>
+                <div style={{ fontSize:12, color:C.textMuted, marginTop:2 }}>Promote your business — $49 / day</div>
+              </div>
+              <button onClick={()=>{ setShowAdForm(!showAdForm); setAdMsg(""); }} style={{ ...accentBtn, padding:"8px 18px", fontSize:12 }}>
+                {showAdForm ? "Cancel" : "+ Book Ad Slot"}
+              </button>
+            </div>
+
+            {/* Book form */}
+            {showAdForm && (
+              <div style={{ padding:"20px 24px", borderBottom:`1px solid ${C.border}`, background:C.surface }}>
+                <div style={{ display:"grid", gap:12 }}>
+                  <div>
+                    <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:5 }}>Upload Ad File (image/video)</label>
+                    <input type="file" accept="image/*,video/*" onChange={handleAdFile} style={{ fontSize:13 }} />
+                    {adFilePreview && adFilePreview.startsWith("data:image") && (
+                      <img src={adFilePreview} style={{ marginTop:8, maxHeight:100, border:`1px solid ${C.border}` }} />
+                    )}
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                    <div>
+                      <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:5 }}>Start Date</label>
+                      <input type="date" min={today} value={adStart} onChange={e=>setAdStart(e.target.value)} style={{ ...inputStyle, padding:"10px 12px" }} />
+                    </div>
+                    <div>
+                      <label style={{ display:"block", fontWeight:700, fontSize:12, marginBottom:5 }}>End Date</label>
+                      <input type="date" min={adStart||today} value={adEnd} onChange={e=>setAdEnd(e.target.value)} style={{ ...inputStyle, padding:"10px 12px" }} />
+                    </div>
+                  </div>
+                  {adStart && adEnd && new Date(adEnd) > new Date(adStart) && (
+                    <div style={{ background:"#f0f8ff", border:"1px solid #b3d9ff", padding:"10px 14px", fontSize:13 }}>
+                      {Math.ceil((new Date(adEnd)-new Date(adStart))/(1000*60*60*24))} day(s) ×
+                      $49 = <strong>${Math.ceil((new Date(adEnd)-new Date(adStart))/(1000*60*60*24))*49}</strong>
+                    </div>
+                  )}
+                  {adMsg && <div style={{ color:C.red, fontSize:12, fontWeight:600 }}>{adMsg}</div>}
+                  <button onClick={handleBookAd} disabled={adBooking} style={{ ...accentBtn, padding:"12px", fontSize:14 }}>
+                    {adBooking ? "Processing payment..." : "Confirm & Pay"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Booked slots calendar view */}
+            <div style={{ padding:"18px 24px" }}>
+              <div style={{ fontWeight:700, fontSize:13, marginBottom:12 }}>Booked Slots</div>
+              {adSlots.length === 0 ? (
+                <div style={{ color:C.textMuted, fontSize:13, textAlign:"center", padding:"20px 0" }}>No ads booked yet. Be the first!</div>
+              ) : (
+                <div style={{ display:"grid", gap:10 }}>
+                  {adSlots.map(slot => (
+                    <div key={slot.id} style={{ display:"flex", gap:14, alignItems:"center", padding:"12px 14px", border:`1px solid ${C.border}`, background:C.surface }}>
+                      {slot.file && slot.file.startsWith("data:image") && (
+                        <img src={slot.file} style={{ width:56, height:40, objectFit:"cover", border:`1px solid ${C.border}`, flexShrink:0 }} />
+                      )}
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:700, fontSize:13 }}>{slot.bookedBy}</div>
+                        <div style={{ fontSize:12, color:C.textMuted }}>{slot.startDate} → {slot.endDate}</div>
+                      </div>
+                      <div style={{ fontWeight:700, fontSize:13, color:C.green }}>${slot.total}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════ AUTH MODAL (all features integrated) ══════════════ */
+    function AuthModal({ mode, onAuth, onClose, onSwitch, notify, onShowPrivacy }) {
+      const isLogin = mode === "login";
+      const [signupType, setSignupType] = useState("consumer");
+      
+      const [form, setForm] = useState({ email:"", password:"", name:"", phone:"", specialty: Object.keys(TECH_CATEGORIES)[0] });
+      const [confirmPassword, setConfirmPassword] = useState("");
+      const [errors, setErrors] = useState({});
+      
+      // Email verification
+      const [isEmailVerified, setIsEmailVerified] = useState(false);
+      const [generatedCode, setGeneratedCode] = useState("");
+      const [inputCode, setInputCode] = useState("");
+      
+      // Name check
+      const [isNameVerified, setIsNameVerified] = useState(false);
+      
+      // Phone
+      const [phonePrefix, setPhonePrefix] = useState("-"); // default: -
+
+      const [privacyChecked, setPrivacyChecked] = useState(false);
+      const [licenseAttached, setLicenseAttached] = useState(false);
+
+      const passwordsMatch = form.password && form.password === confirmPassword;
+
+      const setError = (field, msg) => setErrors(prev => ({ ...prev, [field]: msg }));
+      const clearError = (field) => setErrors(prev => { const n={...prev}; delete n[field]; return n; });
+
+      const handleCheckName = () => {
+        if (!form.name.trim()) return setError("name", "Please enter a name first.");
+        const users = DB.get("users");
+        const techs = DB.get("technicians");
+        const exists = users.some(u => u.name.toLowerCase() === form.name.trim().toLowerCase()) || 
+                       techs.some(t => t.name.toLowerCase() === form.name.trim().toLowerCase());
+        if (exists) {
+          setError("name", "This name is already taken.");
+          setIsNameVerified(false);
+        } else {
+          clearError("name");
+          setIsNameVerified(true);
+        }
+      };
+
+      const handleNameChange = (e) => { setForm({...form, name:e.target.value}); setIsNameVerified(false); clearError("name"); };
+
+      const handleSendCode = () => {
+        if(!form.email) { setError("email","Please enter email first."); return; }
+        clearError("email");
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedCode(code);
+        alert(`[Email Simulation] Verification code sent to: ${form.email}\n\nCode: ${code}\n\n(In production this would arrive by email)`);
+      };
+
+      const handleVerify = () => {
+        if(inputCode === generatedCode && generatedCode !== "") {
+          setIsEmailVerified(true); clearError("verifyCode"); notify("Email Verified ✓");
+        } else {
+          setError("verifyCode", "Incorrect code. Please try again.");
+        }
+      };
+
+      const handleSubmit = () => {
+        const newErrors = {};
+        if (isLogin) {
+          if(!form.email) newErrors.email = "Email is required.";
+          if(!form.password) newErrors.password = "Password is required.";
+          if (Object.keys(newErrors).length) { setErrors(newErrors); return; }
+          return onAuth({ email:form.email, password:form.password, userType:"login" });
+        }
+        
+        if(!form.name) newErrors.name = "Name is required.";
+        else if(!isNameVerified) newErrors.name = "Please check name availability.";
+        if(!form.email) newErrors.email = "Email is required.";
+        if(!isEmailVerified) newErrors.email = (newErrors.email || "") || "Email must be verified.";
+        if(!form.password) newErrors.password = "Password is required.";
+        if(!passwordsMatch) newErrors.confirmPassword = "Passwords do not match.";
+        if(!privacyChecked) newErrors.privacy = "You must accept the Privacy Policy.";
+        
+        if (signupType === "technician") {
+          if (phonePrefix === "-") newErrors.phone = "Please select a country code.";
+          else if (!form.phone) newErrors.phone = "Phone number is required.";
+          if(!licenseAttached) newErrors.license = "Certificate/License upload is required.";
+
+          if (!newErrors.phone && phonePrefix !== "-") {
+            const finalPhone = `${phonePrefix} ${form.phone}`;
+            const allTechs = DB.get("technicians");
+            const phoneExists = allTechs.some(t => t.phone === finalPhone);
+            if (phoneExists) { newErrors.phone = "This phone number is already registered."; }
+          }
+        }
+        
+        if (Object.keys(newErrors).length) { setErrors(newErrors); return; }
+
+        const finalPhone = phonePrefix !== "-" ? `${phonePrefix} ${form.phone}` : form.phone;
+        onAuth({ ...form, phone: finalPhone, userType: signupType });
+      };
+
+      const ErrMsg = ({ field }) => errors[field] ? <div style={{ color:C.red, fontSize:12, marginTop:4, fontWeight:600 }}>✗ {errors[field]}</div> : null;
+
+      return (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50000 }}>
+          <div style={{ background:C.white, border:`2px solid ${C.text}`, padding:32, width:440, maxHeight:"92vh", overflowY:"auto" }}>
+            
+            <h2 style={{ marginTop:0, marginBottom:24, fontWeight:900, fontSize:22 }}>{isLogin ? "Log In" : "Create Account"}</h2>
+
+            {!isLogin && (
+              <div style={{ display:"flex", border:`1px solid ${C.text}`, marginBottom:24, background:C.surface }}>
+                <button onClick={() => setSignupType("consumer")} style={{ flex:1, padding:12, fontWeight:700, border:"none", background: signupType==="consumer"?C.text:"transparent", color: signupType==="consumer"?C.white:C.text, cursor:"pointer" }}>
+                  Consumer
+                </button>
+                <button onClick={() => setSignupType("technician")} style={{ flex:1, padding:12, fontWeight:700, border:"none", background: signupType==="technician"?C.text:"transparent", color: signupType==="technician"?C.white:C.text, cursor:"pointer" }}>
+                  Technician (수리기사)
+                </button>
+              </div>
+            )}
+
+            <div style={{ display:"grid", gap:14, marginBottom:20 }}>
+              
+              {/* Name */}
+              {!isLogin && (
+                <div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <input placeholder="Full Name or Username" style={{...inputStyle, flex:1}} value={form.name} onChange={handleNameChange} />
+                    <button onClick={handleCheckName} style={{...ghostBtn, padding:"0 12px", whiteSpace:"nowrap"}}>Check</button>
+                  </div>
+                  {!isLogin && isNameVerified && <div style={{ color:C.green, fontSize:12, fontWeight:700, marginTop:4 }}>✓ Name is available</div>}
+                  <ErrMsg field="name" />
+                </div>
+              )}
+              
+              {/* Email + verification code (Feature 2) */}
+              <div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <input placeholder="Email Address" type="email" disabled={isEmailVerified} style={{...inputStyle, flex:1}} value={form.email} onChange={e=>{setForm({...form, email:e.target.value}); clearError("email");}} />
+                  {!isLogin && !isEmailVerified && <button onClick={handleSendCode} style={{...ghostBtn, padding:"0 12px", whiteSpace:"nowrap"}}>Send Code</button>}
+                </div>
+                <ErrMsg field="email" />
+                {/* Code input box (always visible after send) */}
+                {!isLogin && generatedCode && !isEmailVerified && (
+                  <div style={{ background:C.surface, border:`1px solid ${C.border}`, padding:12, marginTop:8 }}>
+                    <p style={{ color:C.red, fontSize:11, fontWeight:700, margin:"0 0 8px 0" }}>⚠️ Do not share this code with anyone.</p>
+                    <div style={{ display:"flex", gap:8 }}>
+                      <input placeholder="Enter the 6-digit code" style={{...inputStyle, flex:1, letterSpacing:"0.12em"}} value={inputCode} onChange={e=>{ setInputCode(e.target.value); clearError("verifyCode"); }} maxLength={6} />
+                      <button onClick={handleVerify} style={{...accentBtn, padding:"0 16px"}}>Verify</button>
+                    </div>
+                    <ErrMsg field="verifyCode" />
+                  </div>
+                )}
+                {!isLogin && isEmailVerified && <div style={{ color:C.green, fontSize:12, fontWeight:700, marginTop:6 }}>✓ Email Verified</div>}
+              </div>
+
+              {/* Password */}
+              <div>
+                <input type="password" placeholder="Password" style={inputStyle} value={form.password} onChange={e=>{setForm({...form, password:e.target.value}); clearError("password");}} />
+                <ErrMsg field="password" />
+              </div>
+              {!isLogin && (
+                <div>
+                  <input type="password" placeholder="Confirm Password" style={inputStyle} value={confirmPassword} onChange={e=>{setConfirmPassword(e.target.value); clearError("confirmPassword");}} />
+                  {confirmPassword && (
+                    <div style={{ fontSize:12, fontWeight:700, marginTop:4, color: passwordsMatch ? C.green : C.red }}>
+                      {passwordsMatch ? "✓ Passwords match" : "✗ Passwords do not match"}
+                    </div>
+                  )}
+                  <ErrMsg field="confirmPassword" />
+                </div>
+              )}
+
+              {/* Technician fields */}
+              {!isLogin && signupType === "technician" && (
+                <>
+                  {/* Phone with all countries (Feature 3) */}
+                  <div>
+                    <div style={{ display:"flex", gap:8 }}>
+                      <select 
+                        style={{ ...inputStyle, width:"180px", padding:"0 8px", cursor:"pointer", flexShrink:0 }} 
+                        value={phonePrefix} 
+                        onChange={(e) => { setPhonePrefix(e.target.value); clearError("phone"); }}
+                      >
+                        {ALL_COUNTRIES.map(c => (
+                          <option key={c.code+c.name} value={c.code}>
+                            {c.flag} {c.code === "-" ? c.name : `${c.name} (${c.code})`}
+                          </option>
+                        ))}
+                      </select>
+                      <input 
+                        placeholder="Phone Number" 
+                        style={{...inputStyle, flex:1}} 
+                        value={form.phone} 
+                        onChange={e=>{setForm({...form, phone:e.target.value}); clearError("phone");}} 
+                        disabled={phonePrefix==="-"}
+                      />
+                    </div>
+                    <ErrMsg field="phone" />
+                  </div>
+
+                  <select style={inputStyle} value={form.specialty} onChange={e=>setForm({...form, specialty:e.target.value})}>
+                    {Object.keys(TECH_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+
+                  <div style={{ background:C.surface, border:`1px solid ${C.border}`, padding:12 }}>
+                    <span style={{ display:"block", fontSize:12, fontWeight:700, marginBottom:8 }}>Upload Professional License (Required)</span>
+                    <input type="file" accept="image/*,application/pdf" onChange={() => { setLicenseAttached(true); clearError("license"); }} style={{ fontSize:12 }} />
+                    {licenseAttached && <div style={{ color:C.green, fontSize:12, fontWeight:700, marginTop:4 }}>✓ License attached</div>}
+                    <ErrMsg field="license" />
+                    <p style={{ margin:"8px 0 0 0", fontSize:11, color:C.red, fontWeight:600, lineHeight:1.4 }}>
+                      ⚠️ Forged certificates will result in account termination and legal action.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Privacy (Feature 4) */}
+            {!isLogin && (
+              <div style={{ marginBottom:20 }}>
+                <label style={{ display:"flex", alignItems:"flex-start", gap:8, fontSize:12, color:C.textMid, cursor:"pointer" }}>
+                  <input type="checkbox" checked={privacyChecked} onChange={e=>{setPrivacyChecked(e.target.checked); clearError("privacy");}} style={{ marginTop:2 }} />
+                  <span>
+                    I have read and agree to the{" "}
+                    <span onClick={onShowPrivacy} style={{ color:C.blue, textDecoration:"underline", cursor:"pointer", fontWeight:700 }}>Terms of Service and Privacy Policy</span>
+                    {" "}(GDPR · CCPA · PIPEDA).
+                    <br/><span style={{ fontSize:11, color:C.textMuted }}>개인정보 수집 및 이용에 동의합니다.</span>
+                  </span>
+                </label>
+                <ErrMsg field="privacy" />
+              </div>
+            )}
+
+            <button onClick={handleSubmit} style={{ ...accentBtn, width:"100%", marginBottom:16, padding:14, fontSize:15 }}>
+              {isLogin ? "Log In" : "Complete Registration"}
+            </button>
+            
+            <div style={{ textAlign:"center", fontSize:13, color:C.textMid, marginBottom:16 }}>
+              {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
+              <strong style={{ color:C.text, cursor:"pointer", textDecoration:"underline" }} onClick={() => onSwitch(isLogin ? "signup" : "login")}>
+                {isLogin ? "Sign Up" : "Log In"}
+              </strong>
+            </div>
+            <button onClick={onClose} style={{ ...ghostBtn, width:"100%", padding:12 }}>Cancel</button>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<WRCApp />);
+  </script>
+</body>
+</html>
